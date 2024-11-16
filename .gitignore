@@ -1,2 +1,6 @@
-.*\.out
-.*\[.*\].*
+*
+!Makefile
+!mitm_base.c
+!mitm.c
+!REAME.md
+!sujet.pdf
