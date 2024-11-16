@@ -20,4 +20,36 @@ It provides us how to invoke the sequential program. Also, it tells us how much 
 My goal during this project is to approche the size of the problem with $n=42$ for the beauty of the challenge and which "<u>*begins to be seriously challenging*</u>".
 
 ## Before starting the project :
-**Learn about <u>sharding</u>**
+**Learn about <u>sharding</u> apply to dictionaries**
+The goal of sharding is to split the dictionary into several parts and to distribute them to the different nodes. This way, each node will have a part of the dictionary and will be able to compute the corresponding values of $f(x)$ and $g(x)$.
+
+To do this, we will calculate the key in the dictionary modulo the number of nodes. This way, we will be able to distribute the keys in the dictionary to the different nodes. Making searching an element in the dictionary faster.
+
+**Combining <u>OpenMP</u> and <u>MPI</u>**
+To use efficiently the ressources of th cluster, we want **MPI** to use only one process on one core of each **CPU** which will be in charge of the communication between the **CPUs** and the **nodes**. Then, we want **OpenMP** to use all the cores/threads of the **CPU**.
+
+Since we start using **MPI** we have been using it with it's default configuration that uses one process per core on every nodes it can. To make sure that **MPI** uses only one process per **CPU** we have to use the following command :
+
+```bash
+mpirun --hostfile $OAR_NODEFILE \
+       --map-by ppr:1:socket \
+       --bind-to socket \
+       ./mitm
+```
+
+Explanation of the command :
+- `--hostfile $OAR_NODEFILE` : This command tells **MPI** to use the nodes given in the file `$OAR_NODEFILE`.
+- `--map-by ppr:1:socket` : This command tells **MPI** to use only one process per socket.
+- `--bind-to socket` : This command tells **MPI** to bind the process to the socket.
+
+On some clusters we will need to use the following command :
+
+```bash
+mpirun --hostfile $OAR_NODEFILE \
+       --map-by ppr:1:socket \
+       --bind-to socket \
+       --mca pml ^ucx \
+       ./mitm
+```
+
+`--mca pml ^ucx` : This command tells **MPI** to use the `ob1` protocol instead of the `ucx` protocol. Otherwise, the program try to use the `ucx` protocol which is not supported by the cluster and send an error.
