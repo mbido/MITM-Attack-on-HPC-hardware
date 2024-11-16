@@ -34,7 +34,7 @@ Since we start using **MPI** we have been using it with it's default configurati
 mpirun --hostfile $OAR_NODEFILE \
        --map-by ppr:1:socket \
        --bind-to socket \
-       ./mitm
+       ./mitm ...
 ```
 
 Explanation of the command :
@@ -49,7 +49,7 @@ mpirun --hostfile $OAR_NODEFILE \
        --map-by ppr:1:socket \
        --bind-to socket \
        --mca pml ^ucx \
-       ./mitm
+       ./mitm ...
 ```
 
 `--mca pml ^ucx` : This command tells **MPI** to use the `ob1` protocol instead of the `ucx` protocol. Otherwise, the program try to use the `ucx` protocol which is not supported by the cluster and send an error.

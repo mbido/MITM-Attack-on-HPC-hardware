@@ -133,6 +133,8 @@ void dict_setup(u64 size) {
 
 /* Insert the binding key |----> value in the dictionnary */
 void dict_insert(u64 key, u64 value) {
+  /* TODO : use sharding to separate the insertion in only one MPI process
+   * (shard) */
   u64 h = murmur64(key) % dict_size;
   for (;;) {
     if (A[h].k == EMPTY)
@@ -152,6 +154,7 @@ void dict_insert(u64 key, u64 value) {
  *  The function returns -1 if there are more than `maxval` results.
  */
 int dict_probe(u64 key, int maxval, u64 values[]) {
+  /* TODO : search in the right MPI process (shard)*/
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
   int nval = 0;
