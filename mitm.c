@@ -236,7 +236,7 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
 
 #pragma omp parallel for schedule(dynamic)
   for (u64 z = 0; z < N; z++) {
-    u64 x[256]; // Declare x inside the loop
+    u64 x[256];
     u64 y = g(z);
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
@@ -246,15 +246,15 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
 
     for (int i = 0; i < nx; i++) {
       if (is_good_pair(x[i], z)) {
+        int local_nres;
 
-#pragma omp critical
-        {
-          k1[nres] = x[i];
-          k2[nres] = z;
-          printf("SOLUTION FOUND!\n");
-          nres += 1;
-          assert(maxres > nres);
-        }
+#pragma omp atomic capture
+        local_nres = nres++;
+
+        k1[local_nres] = x[i];
+        k2[local_nres] = z;
+        printf("SOLUTION FOUND!\n");
+        assert(maxres > local_nres);
       }
     }
   }
