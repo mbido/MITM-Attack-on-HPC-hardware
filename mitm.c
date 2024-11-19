@@ -235,57 +235,30 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   u64 ncandidates = 0;
   u64 x[256];
 
-  volatile bool stop = false; // Assure la visibilité entre threads
-
+#pragma omp parallel for schedule(dynamic)
   for (u64 z = 0; z < N; z++) {
-    if (stop)
-      break; // Interrompt la boucle externe si `stop` est vrai
-
     u64 y = g(z);
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
+
+#pragma omp critical
     ncandidates += nx;
-
-#pragma omp parallel for default(none)                                         \
-    shared(nres, stop, k1, k2, x, z, maxres) firstprivate(nx)
-    for (int i = 0; i < nx; i++) {
-      if (stop)
-        continue; // Vérifie si un autre thread a signalé l'arrêt
-
+    for (int i = 0; i < nx; i++)
       if (is_good_pair(x[i], z)) {
-        printf("This is a good pair !");
-        int index = -1;
 
-// Section critique pour synchroniser l'accès à `nres` et `stop`
 #pragma omp critical
         {
-          if (!stop && nres < maxres) {
-            index = nres++;
-            if (nres >= maxres) {
-              stop = true;
-            }
-          } else {
-            stop = true;
-          }
-        }
-
-        if (index >= 0) {
-          k1[index] = x[i];
-          k2[index] = z;
-
-// Optionnel : Envelopper `printf` dans une section critique
-#pragma omp critical
-          { printf("SOLUTION FOUND!\n"); }
+          k1[nres] = x[i];
+          k2[nres] = z;
+          printf("SOLUTION FOUND!\n");
+          nres += 1;
         }
       }
-    }
   }
-
   printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
          ncandidates);
-  return (stop) ? -1 : nres;
+  return nres;
 }
-
 /************************** command-line options ****************************/
 
 void usage(char **argv) {
