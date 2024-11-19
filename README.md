@@ -23,7 +23,8 @@ My goal during this project is to approche the size of the problem with $n=42$ f
 **Learn about <u>sharding</u> apply to dictionaries**
 The goal of sharding is to split the dictionary into several parts and to distribute them to the different nodes. This way, each node will have a part of the dictionary and will be able to compute the corresponding values of $f(x)$ and $g(x)$.
 
-To do this, we will calculate the key in the dictionary modulo the number of nodes. This way, we will be able to distribute the keys in the dictionary to the different nodes. Making searching an element in the dictionary faster.
+~~To do this, we will calculate the key in the dictionary modulo the number of nodes. This way, we will be able to distribute the keys in the dictionary to the different nodes. Making searching an element in the dictionary faster.~~~
+It is better to share the dictionnary in contiguous parts so the compiler will be able to perform more advanced optimisations.
 
 **Combining <u>OpenMP</u> and <u>MPI</u>**
 To use efficiently the ressources of th cluster, we want **MPI** to use only one process on one core of each **CPU** which will be in charge of the communication between the **CPUs** and the **nodes**. Then, we want **OpenMP** to use all the cores/threads of the **CPU**.
