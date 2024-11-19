@@ -233,17 +233,18 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
 
   int nres = 0;
   u64 ncandidates = 0;
-  u64 x[256];
 
 #pragma omp parallel for schedule(dynamic)
   for (u64 z = 0; z < N; z++) {
+    u64 x[256]; // Declare x inside the loop
     u64 y = g(z);
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
 
-#pragma omp critical
+#pragma omp atomic
     ncandidates += nx;
-    for (int i = 0; i < nx; i++)
+
+    for (int i = 0; i < nx; i++) {
       if (is_good_pair(x[i], z)) {
 
 #pragma omp critical
@@ -252,13 +253,16 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
           k2[nres] = z;
           printf("SOLUTION FOUND!\n");
           nres += 1;
+          assert(maxres > nres);
         }
       }
+    }
   }
   printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
          ncandidates);
   return nres;
 }
+
 /************************** command-line options ****************************/
 
 void usage(char **argv) {
