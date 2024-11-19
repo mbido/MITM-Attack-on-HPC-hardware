@@ -118,6 +118,7 @@ static const u32 EMPTY = 0xffffffff;
 static const u64 PRIME = 0xfffffffb;
 
 /* allocate a hash table with `size` slots (12*size bytes) */
+// ! with each MPI process
 void dict_setup(u64 size) {
   dict_size = size;
   char hdsize[8];
@@ -132,6 +133,7 @@ void dict_setup(u64 size) {
 }
 
 /* Insert the binding key |----> value in the dictionnary */
+// ! on one MPI process
 void dict_insert(u64 key, u64 value) {
   /* TODO : use sharding to separate the insertion in only one MPI process
    * (shard) */
@@ -153,11 +155,13 @@ void dict_insert(u64 key, u64 value) {
  *  array must be preallocated of size (at least) `maxval`.
  *  The function returns -1 if there are more than `maxval` results.
  */
+// ! on one MPI process
 int dict_probe(u64 key, int maxval, u64 values[]) {
   /* TODO : search in the right MPI process (shard)*/
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
   int nval = 0;
+  // ! with each OpenMP threads
   for (;;) {
     if (A[h].k == EMPTY)
       return nval;
@@ -174,6 +178,8 @@ int dict_probe(u64 key, int maxval, u64 values[]) {
 }
 
 /***************************** MITM problem ***********************************/
+
+// ! Do not touch for now
 
 /* f : {0, 1}^n --> {0, 1}^n.  Speck64-128 encryption of P[0], using k */
 u64 f(u64 k) {
@@ -228,24 +234,56 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   int nres = 0;
   u64 ncandidates = 0;
   u64 x[256];
+
+  volatile bool stop = false; // Assure la visibilité entre threads
+
   for (u64 z = 0; z < N; z++) {
+    if (stop)
+      break; // Interrompt la boucle externe si `stop` est vrai
+
     u64 y = g(z);
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
     ncandidates += nx;
-    for (int i = 0; i < nx; i++)
+
+#pragma omp parallel for default(none)                                         \
+    shared(nres, stop, k1, k2, x, z, maxres) firstprivate(nx)
+    for (int i = 0; i < nx; i++) {
+      if (stop)
+        continue; // Vérifie si un autre thread a signalé l'arrêt
+
       if (is_good_pair(x[i], z)) {
-        if (nres == maxres)
-          return -1;
-        k1[nres] = x[i];
-        k2[nres] = z;
-        printf("SOLUTION FOUND!\n");
-        nres += 1;
+        printf("This is a good pair !");
+        int index = -1;
+
+// Section critique pour synchroniser l'accès à `nres` et `stop`
+#pragma omp critical
+        {
+          if (!stop && nres < maxres) {
+            index = nres++;
+            if (nres >= maxres) {
+              stop = true;
+            }
+          } else {
+            stop = true;
+          }
+        }
+
+        if (index >= 0) {
+          k1[index] = x[i];
+          k2[index] = z;
+
+// Optionnel : Envelopper `printf` dans une section critique
+#pragma omp critical
+          { printf("SOLUTION FOUND!\n"); }
+        }
       }
+    }
   }
+
   printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
          ncandidates);
-  return nres;
+  return (stop) ? -1 : nres;
 }
 
 /************************** command-line options ****************************/
