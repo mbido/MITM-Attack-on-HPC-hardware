@@ -23,8 +23,9 @@ My goal during this project is to approche the size of the problem with $n=42$ f
 **Learn about <u>sharding</u> apply to dictionaries**
 The goal of sharding is to split the dictionary into several parts and to distribute them to the different nodes. This way, each node will have a part of the dictionary and will be able to compute the corresponding values of $f(x)$ and $g(x)$.
 
-~~To do this, we will calculate the key in the dictionary modulo the number of nodes. This way, we will be able to distribute the keys in the dictionary to the different nodes. Making searching an element in the dictionary faster.~~~
-It is better to share the dictionnary in contiguous parts so the compiler will be able to perform more advanced optimisations.
+To do this, we will calculate the key in the dictionary modulo the number of nodes. This way, we will be able to distribute the keys in the dictionary to the different nodes. Making searching an element in the dictionary faster.
+
+The Probe operation can be easily multithreaded the hard part is to parallelize the insertion part. For that I will use a master process that will use its threads to calculate the keys, put them (and the value) in a buffer (one buffer per MPI process) when a buffer is full, we send it to the correct MPI process that will insert all the keys and their values in its shard. *(Maybe we'll use every MPI process as master process...)*
 
 **Combining <u>OpenMP</u> and <u>MPI</u>**
 To use efficiently the ressources of th cluster, we want **MPI** to use only one process on one core of each **CPU** which will be in charge of the communication between the **CPUs** and the **nodes**. Then, we want **OpenMP** to use all the cores/threads of the **CPU**.
