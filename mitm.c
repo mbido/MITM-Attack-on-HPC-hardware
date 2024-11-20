@@ -118,7 +118,6 @@ static const u32 EMPTY = 0xffffffff;
 static const u64 PRIME = 0xfffffffb;
 
 /* allocate a hash table with `size` slots (12*size bytes) */
-// ! with each MPI process
 void dict_setup(u64 size) {
   dict_size = size;
   char hdsize[8];
@@ -133,7 +132,6 @@ void dict_setup(u64 size) {
 }
 
 /* Insert the binding key |----> value in the dictionnary */
-// ! on one MPI process
 void dict_insert(u64 key, u64 value) {
   /* TODO : use sharding to separate the insertion in only one MPI process
    * (shard) */
@@ -155,13 +153,11 @@ void dict_insert(u64 key, u64 value) {
  *  array must be preallocated of size (at least) `maxval`.
  *  The function returns -1 if there are more than `maxval` results.
  */
-// ! on one MPI process
 int dict_probe(u64 key, int maxval, u64 values[]) {
   /* TODO : search in the right MPI process (shard)*/
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
   int nval = 0;
-  // ! with each OpenMP threads
   for (;;) {
     if (A[h].k == EMPTY)
       return nval;
@@ -178,8 +174,6 @@ int dict_probe(u64 key, int maxval, u64 values[]) {
 }
 
 /***************************** MITM problem ***********************************/
-
-// ! Do not touch for now
 
 /* f : {0, 1}^n --> {0, 1}^n.  Speck64-128 encryption of P[0], using k */
 u64 f(u64 k) {
