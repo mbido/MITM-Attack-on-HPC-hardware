@@ -148,6 +148,38 @@ void dict_insert(u64 key, u64 value) {
   A[h].v = value;
 }
 
+// /* Insert the binding key |----> value in the dictionnary */
+// void dict_insert(u64 key, u64 value) {
+//   /* TODO : use sharding to separate the insertion in only one MPI process
+//    * (shard) */
+//   u64 h = murmur64(key) % dict_size;
+
+//   u32 current_k = EMPTY + 1;
+//   u64 index = h;
+
+//   while (current_k != EMPTY) {
+// #pragma omp atomic compare capture
+//     {
+//       current_k = A[h].k;
+//       if (current_k == EMPTY) {
+//         index = h;
+//       }
+//     }
+//     h = (h + 1) % dict_size;
+//   }
+
+//   // for (;;) {
+//   //   if (A[h].k == EMPTY)
+//   //     break;
+//   //   h += 1;
+//   //   if (h == dict_size)
+//   //     h = 0;
+//   // }
+//   assert(A[index].k == EMPTY);
+//   A[index].k = key % PRIME;
+//   A[index].v = value;
+// }
+
 /* Query the dictionnary with this `key`.  Write values (potentially)
  *  matching the key in `values` and return their number. The `values`
  *  array must be preallocated of size (at least) `maxval`.
