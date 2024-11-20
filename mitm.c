@@ -132,53 +132,45 @@ void dict_setup(u64 size) {
 }
 
 /* Insert the binding key |----> value in the dictionnary */
-void dict_insert(u64 key, u64 value) {
-  /* TODO : use sharding to separate the insertion in only one MPI process
-   * (shard) */
-  u64 h = murmur64(key) % dict_size;
-  for (;;) {
-    if (A[h].k == EMPTY)
-      break;
-    h += 1;
-    if (h == dict_size)
-      h = 0;
-  }
-  assert(A[h].k == EMPTY);
-  A[h].k = key % PRIME;
-  A[h].v = value;
-}
-
-// /* Insert the binding key |----> value in the dictionnary */
 // void dict_insert(u64 key, u64 value) {
 //   /* TODO : use sharding to separate the insertion in only one MPI process
 //    * (shard) */
 //   u64 h = murmur64(key) % dict_size;
-
-//   u32 current_k = EMPTY + 1;
-//   u64 index = h;
-
-//   while (current_k != EMPTY) {
-// #pragma omp atomic compare capture
-//     {
-//       current_k = A[h].k;
-//       if (current_k == EMPTY) {
-//         index = h;
-//       }
-//     }
-//     h = (h + 1) % dict_size;
+//   for (;;) {
+//     if (A[h].k == EMPTY)
+//       break;
+//     h += 1;
+//     if (h == dict_size)
+//       h = 0;
 //   }
-
-//   // for (;;) {
-//   //   if (A[h].k == EMPTY)
-//   //     break;
-//   //   h += 1;
-//   //   if (h == dict_size)
-//   //     h = 0;
-//   // }
-//   assert(A[index].k == EMPTY);
-//   A[index].k = key % PRIME;
-//   A[index].v = value;
+//   assert(A[h].k == EMPTY);
+//   A[h].k = key % PRIME;
+//   A[h].v = value;
 // }
+
+/* Insert the binding key |----> value in the dictionnary */
+void dict_insert(u64 key, u64 value) {
+  u64 h = murmur64(key) % dict_size;
+
+  key = key % PRIME;
+
+  bool ok = false;
+  while (!ok) {
+#pragma omp atomic compare capture
+    {
+      ok = A[h].k == EMPTY;
+      if (ok) {
+        A[h].k = key;
+      }
+    }
+    h = (h + 1) % dict_size;
+  }
+
+  h = ((h - 1) + dict_size) % dict_size;
+
+  assert(A[h].k == key);
+  A[h].v = value;
+}
 
 /* Query the dictionnary with this `key`.  Write values (potentially)
  *  matching the key in `values` and return their number. The `values`
@@ -249,6 +241,8 @@ bool is_good_pair(u64 k1, u64 k2) {
 int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   double start = wtime();
   u64 N = 1ull << n;
+
+#pragma omp parallel for schedule(static)
   for (u64 x = 0; x < N; x++) {
     u64 z = f(x);
     dict_insert(z, x);
@@ -260,7 +254,7 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   int nres = 0;
   u64 ncandidates = 0;
 
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(static)
   for (u64 z = 0; z < N; z++) {
     u64 x[256];
     u64 y = g(z);
