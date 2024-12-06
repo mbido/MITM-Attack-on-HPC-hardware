@@ -132,43 +132,17 @@ void dict_setup(u64 size) {
 }
 
 /* Insert the binding key |----> value in the dictionnary */
-// void dict_insert(u64 key, u64 value) {
-//   /* TODO : use sharding to separate the insertion in only one MPI process
-//    * (shard) */
-//   u64 h = murmur64(key) % dict_size;
-//   for (;;) {
-//     if (A[h].k == EMPTY)
-//       break;
-//     h += 1;
-//     if (h == dict_size)
-//       h = 0;
-//   }
-//   assert(A[h].k == EMPTY);
-//   A[h].k = key % PRIME;
-//   A[h].v = value;
-// }
-
-/* Insert the binding key |----> value in the dictionnary */
 void dict_insert(u64 key, u64 value) {
   u64 h = murmur64(key) % dict_size;
-
-  key = key % PRIME;
-
-  bool ok = false;
-  while (!ok) {
-#pragma omp atomic compare capture
-    {
-      ok = A[h].k == EMPTY;
-      if (ok) {
-        A[h].k = key;
-      }
-    }
-    h = (h + 1) % dict_size;
+  for (;;) {
+    if (A[h].k == EMPTY)
+      break;
+    h += 1;
+    if (h == dict_size)
+      h = 0;
   }
-
-  h = ((h - 1) + dict_size) % dict_size;
-
-  assert(A[h].k == key);
+  assert(A[h].k == EMPTY);
+  A[h].k = key % PRIME;
   A[h].v = value;
 }
 
@@ -178,7 +152,6 @@ void dict_insert(u64 key, u64 value) {
  *  The function returns -1 if there are more than `maxval` results.
  */
 int dict_probe(u64 key, int maxval, u64 values[]) {
-  /* TODO : search in the right MPI process (shard)*/
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
   int nval = 0;
@@ -241,8 +214,6 @@ bool is_good_pair(u64 k1, u64 k2) {
 int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   double start = wtime();
   u64 N = 1ull << n;
-
-#pragma omp parallel for schedule(static)
   for (u64 x = 0; x < N; x++) {
     u64 z = f(x);
     dict_insert(z, x);
@@ -253,30 +224,21 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
 
   int nres = 0;
   u64 ncandidates = 0;
-
-#pragma omp parallel for schedule(static)
+  u64 x[256];
   for (u64 z = 0; z < N; z++) {
-    u64 x[256];
     u64 y = g(z);
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
-
-#pragma omp atomic
     ncandidates += nx;
-
-    for (int i = 0; i < nx; i++) {
+    for (int i = 0; i < nx; i++)
       if (is_good_pair(x[i], z)) {
-        int local_nres;
-
-#pragma omp atomic capture
-        local_nres = nres++;
-
-        k1[local_nres] = x[i];
-        k2[local_nres] = z;
+        if (nres == maxres)
+          return -1;
+        k1[nres] = x[i];
+        k2[nres] = z;
         printf("SOLUTION FOUND!\n");
-        assert(maxres > local_nres);
+        nres += 1;
       }
-    }
   }
   printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
          ncandidates);
