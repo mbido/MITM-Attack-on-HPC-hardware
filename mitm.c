@@ -2,6 +2,7 @@
 #include <err.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <mpi.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,16 @@ u64 mask;  /* this is 2**n - 1 */
 
 u64 dict_size;   /* number of slots in the hash table */
 struct entry *A; /* the hash table */
+
+/* mpi variables */
+int mpi_size;
+int mpi_rank;
+
+/* buffer to exchange y values */
+u64 *yz_buffer;
+u32 buff_size = 2048;
+u32 buff_index = 0;
+u64 null_buffer_value = (u64)(-1);
 
 /* (P, C) : two plaintext-ciphertext pairs */
 u32 P[2][2] = {{0, 0}, {0xffffffff, 0xffffffff}};
@@ -106,6 +117,24 @@ void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[]) {
     DR32(Pt[1], Pt[0], rk[i--]);
 }
 
+/******************************** buffer ********************************/
+
+void reset_buffer() {
+  for (u32 i = 0; i < mpi_size * buff_size * 2; i++) {
+    yz_buffer[i] = null_buffer_value;
+  }
+}
+
+/* allocate a buffer with size = mpi_size * buff_size */
+void init_buffer() {
+  // printf("buffer size is : %u\n", mpi_size * buff_size);
+  yz_buffer = malloc(sizeof(*yz_buffer) * mpi_size * buff_size * 2);
+  if (yz_buffer == NULL) {
+    err(1, "impossible to allocate the buffer");
+  }
+  reset_buffer();
+}
+
 /******************************** dictionary ********************************/
 
 /*
@@ -122,8 +151,9 @@ void dict_setup(u64 size) {
   dict_size = size;
   char hdsize[8];
   human_format(dict_size * sizeof(*A), hdsize);
-  printf("Dictionary size: %sB\n", hdsize);
-
+  if (mpi_rank == 0) {
+    printf("Dictionary size: %sB\n", hdsize);
+  }
   A = malloc(sizeof(*A) * dict_size);
   if (A == NULL)
     err(1, "impossible to allocate the dictionnary");
@@ -211,22 +241,61 @@ bool is_good_pair(u64 k1, u64 k2) {
 /******************************************************************************/
 
 /* search the "golden collision" */
+void process_buffer(int maxres, u64 k1[], u64 k2[], int *nres,
+                    u64 *ncandidates) {
+  u64 x[256];
+  for (u32 i = 0; i < mpi_size * buff_size; i++) {
+    u64 yi = yz_buffer[i * 2];
+    u64 zi = yz_buffer[i * 2 + 1];
+    if (yi == null_buffer_value || zi == null_buffer_value)
+      break;
+    int nx = dict_probe(yi, 256, x);
+    assert(nx >= 0);
+    *ncandidates += nx;
+    for (int j = 0; j < nx; j++)
+      if (is_good_pair(x[j], zi)) {
+        if (*nres == maxres)
+          return;
+        k1[*nres] = x[j];
+        k2[*nres] = zi;
+        printf("SOLUTION FOUND!\n");
+        (*nres)++;
+      }
+  }
+}
+
 int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   double start = wtime();
   u64 N = 1ull << n;
-  for (u64 x = 0; x < N; x++) {
+  for (u64 x = mpi_rank; x < N; x += mpi_size) {
     u64 z = f(x);
     dict_insert(z, x);
   }
 
   double mid = wtime();
-  printf("Fill: %.1fs\n", mid - start);
+  if (mpi_rank == 0)
+    printf("Fill: %.1fs\n", mid - start);
 
   int nres = 0;
   u64 ncandidates = 0;
   u64 x[256];
-  for (u64 z = 0; z < N; z++) {
+  for (u64 z = mpi_rank; z < N; z += mpi_size) {
     u64 y = g(z);
+
+    // adding y to the buffer :
+    u32 index = buff_size * mpi_rank + buff_index++;
+    yz_buffer[index * 2] = y;
+    yz_buffer[index * 2 + 1] = z;
+
+    // if buffer full -> all_gather
+    if (buff_index == buff_size) {
+      MPI_Allgather(MPI_IN_PLACE, buff_size * 2, MPI_UINT64_T, yz_buffer,
+                    buff_size * 2, MPI_UINT64_T, MPI_COMM_WORLD);
+      process_buffer(maxres, k1, k2, &nres, &ncandidates);
+      reset_buffer();
+      buff_index = 0;
+    }
+
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
     ncandidates += nx;
@@ -240,8 +309,15 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
         nres += 1;
       }
   }
-  printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
-         ncandidates);
+
+  // managing the remainder in the buffer
+  MPI_Allgather(MPI_IN_PLACE, buff_size * 2, MPI_UINT64_T, yz_buffer,
+                buff_size * 2, MPI_UINT64_T, MPI_COMM_WORLD);
+  process_buffer(maxres, k1, k2, &nres, &ncandidates);
+
+  if (mpi_rank == 0)
+    printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+           ncandidates);
   return nres;
 }
 
@@ -296,16 +372,23 @@ void process_command_line_options(int argc, char **argv) {
 /******************************************************************************/
 
 int main(int argc, char **argv) {
-  process_command_line_options(argc, argv);
-  printf("Running with n=%d, C0=(%08x, %08x) and C1=(%08x, %08x)\n", (int)n,
-         C[0][0], C[0][1], C[1][0], C[1][1]);
+  MPI_Init(NULL, NULL);
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
 
-  dict_setup(1.125 * (1ull << n));
+  process_command_line_options(argc, argv);
+  if (mpi_rank == 0) {
+    printf("Running with n=%d, C0=(%08x, %08x) and C1=(%08x, %08x)\n", (int)n,
+           C[0][0], C[0][1], C[1][0], C[1][1]);
+  }
+  u64 s = (1.125 * (1ull << n)) / mpi_size + 1;
+  dict_setup(s);
+  init_buffer();
 
   /* search */
   u64 k1[16], k2[16];
   int nkey = golden_claw_search(16, k1, k2);
-  assert(nkey > 0);
+  // assert(nkey > 0);
 
   /* validation */
   for (int i = 0; i < nkey; i++) {
@@ -314,4 +397,9 @@ int main(int argc, char **argv) {
     printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n", k1[i],
            k2[i]);
   }
+
+  free(yz_buffer); // Libérer la mémoire allouée pour le buffer
+  free(A);         // Libérer la mémoire allouée pour le dictionnaire
+
+  MPI_Finalize();
 }

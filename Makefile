@@ -1,5 +1,5 @@
 CC = mpicc
-CFLAGS = -fopenmp -Wall -Wextra -O3
+CFLAGS = -fopenmp -Wall -Wextra -g -O3
 TARGET = mitm
 SRC = mitm.c
 
