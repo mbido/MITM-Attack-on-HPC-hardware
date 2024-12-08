@@ -4,7 +4,7 @@ This repo relate the project in parallel computing course. It is all about paral
 ## Instances of the problem :
 We can use the web service https://ppar.tme-crypto.fr/<username>/<n> with a *username* and a reasonable number $n$ with $2^n$ being the size of the words taken by $f(x)$, $g(x)$ and $\pi(x, y)$.
 
-ex : https://ppar.tme-crypto.fr/matthieu.bidault/25
+ex : https://ppar.tme-crypto.fr/matthieu.bidault/31 -> (2d0e1ead, 6f3f80ad)
 
 It provides us how to invoke the sequential program. Also, it tells us how much RAM is needed to run the program with a given $n$.
 

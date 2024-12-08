@@ -34,8 +34,7 @@ int mpi_rank;
 MPI_Request *requests;
 
 /* buffers to exchange informations */
-u64 **send_buffers; // one per process
-u64 **recv_buffers; // one per process
+u64 **buffers; // un par processus
 u64 buffer_size;
 u64 null_buffer_value = (u64)(-1);
 u64 *buffer_idx;
@@ -123,7 +122,7 @@ void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[]) {
 /******************************** buffers ********************************/
 
 void reset_buffer(u64 *buffer) {
-  printf("null_buffer_value = %llu\n", null_buffer_value);
+  // printf("null_buffer_value = %llu\n", null_buffer_value);
   for (u64 i = 0; i < buffer_size; i++) {
     buffer[i] = null_buffer_value;
   }
@@ -134,28 +133,25 @@ void buffer_setup(u64 size) {
   if (mpi_rank == 0)
     printf("Buffer size: %llu\n", size);
 
-  send_buffers = malloc(sizeof(*send_buffers) * mpi_size);
-  recv_buffers = malloc(sizeof(*recv_buffers) * mpi_size);
-  if (send_buffers == NULL || recv_buffers == NULL) {
-    err(1, "impossible to allocate the buffer lists");
+  buffers = malloc(sizeof(*buffers) * mpi_size);
+  if (buffers == NULL) {
+    err(1, "impossible de réserver la liste des buffers");
   }
   buffer_idx = malloc(sizeof(*buffer_idx) * mpi_size);
   if (buffer_idx == NULL) {
-    err(1, "impossible to allocate the index list");
+    err(1, "impossible de réserver la liste des index");
   }
   requests = malloc(sizeof(*requests) * mpi_size);
   if (requests == NULL) {
-    err(1, "impossible to allocate the mpi request list");
+    err(1, "impossible de réserver la liste des requêtes MPI");
   }
   for (int i = 0; i < mpi_size; i++) {
     buffer_idx[i] = 0;
-    send_buffers[i] = malloc(sizeof(*send_buffers[i]) * size * 2); // x and f(x)
-    recv_buffers[i] = malloc(sizeof(*recv_buffers[i]) * size * 2); // x and f(x)
-    if (send_buffers[i] == NULL || recv_buffers[i] == NULL) {
-      err(1, "impossible to allocate the buffers");
+    buffers[i] = malloc(sizeof(*buffers[i]) * size * 2); // x et f(x)
+    if (buffers[i] == NULL) {
+      err(1, "impossible de réserver les buffers");
     }
-    reset_buffer(send_buffers[i]);
-    // reset_buffer(recv_buffers[i]);
+    reset_buffer(buffers[i]);
   }
 }
 
@@ -268,21 +264,18 @@ bool is_good_pair(u64 k1, u64 k2) {
 int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   double start = wtime();
   u64 N = 1ull << n;
-  u64 counter = 0;
+
   for (u64 x = mpi_rank; x < N; x += mpi_size) {
     u64 z = f(x);
     int r = z % mpi_size;
     if (r == mpi_rank) {
-      // if (++counter % 10000 == 0) {
-      //   printf("rank %d counter : %llu\n", mpi_rank, counter);
-      // }
       dict_insert(z, x);
     } else {
       u64 index = buffer_idx[r]++;
-      send_buffers[r][index * 2] = x;
-      send_buffers[r][index * 2 + 1] = z;
+      buffers[r][index * 2] = x;
+      buffers[r][index * 2 + 1] = z;
       if (buffer_idx[r] >= buffer_size) {
-        err(1, "cannot insert in buffer anymore !");
+        err(1, "cannot insert in buffer anymore !\n");
       }
     }
   }
@@ -294,35 +287,34 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
       // send data to every other rank
       for (int i = 0; i < mpi_size; i++) {
         if (i != mpi_rank) {
-          printf("rank %d sending to rank %d\n", mpi_rank, i);
-          MPI_Send(send_buffers[i], buffer_size * 2, MPI_UINT64_T, i,
-                   TO_INSERT_TAG, MPI_COMM_WORLD);
-          printf("rank %d sent to rank %d\n", mpi_rank, i);
+          // printf("rank %d sending to rank %d\n", mpi_rank, i);
+          MPI_Send(buffers[i], buffer_size * 2, MPI_UINT64_T, i, TO_INSERT_TAG,
+                   MPI_COMM_WORLD);
+          // printf("rank %d sent to rank %d\n", mpi_rank, i);
         }
       }
     } else {
       // receive data from process of rank 'rank'
-      printf("rank %d receiving from rank %d\n", mpi_rank, rank);
+      // printf("rank %d receiving from rank %d\n", mpi_rank, rank);
       MPI_Status status;
-      MPI_Recv(recv_buffers[rank], buffer_size * 2, MPI_UINT64_T, rank,
+      MPI_Recv(buffers[mpi_rank], buffer_size * 2, MPI_UINT64_T, rank,
                TO_INSERT_TAG, MPI_COMM_WORLD, &status);
 
-      printf("rank %d received from rank %d\n", mpi_rank, rank);
+      // printf("rank %d received from rank %d\n", mpi_rank, rank);
       // insert data
-      u64 counter = 0;
       for (u64 j = 0; j < buffer_size; j++) {
-        // if (++counter % 10000 == 0) {
-        //   printf("rank %d counter : %llu\n", mpi_rank, counter);
-        // }
 
-        u64 x = recv_buffers[rank][j * 2];
-        u64 z = recv_buffers[rank][j * 2 + 1];
-        if (x == null_buffer_value || z == null_buffer_value)
+        u64 x = buffers[mpi_rank][j * 2];
+        u64 z = buffers[mpi_rank][j * 2 + 1];
+        // !!!! SHOULD BE null_buffer_value = 18446744073709551615
+        // !!!! BUT IT IS REPLACED BY 0
+        if (x == 0 || z == 0)
           break;
         // printf("%llu, %llu\n", z, x);
         dict_insert(z, x);
       }
-      printf("rank %d inserted from rank %d\n", mpi_rank, rank);
+      reset_buffer(buffers[mpi_rank]);
+      // printf("rank %d inserted from rank %d\n", mpi_rank, rank);
     }
   }
 
@@ -334,6 +326,9 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   u64 x[256];
   for (u64 z = 0; z < N; z++) {
     u64 y = g(z);
+    int r = y % mpi_size;
+    if (r % mpi_size != mpi_rank)
+      continue;
     int nx = dict_probe(y, 256, x);
     assert(nx >= 0);
     ncandidates += nx;
@@ -411,8 +406,8 @@ int main(int argc, char **argv) {
     printf("Running with n=%d, C0=(%08x, %08x) and C1=(%08x, %08x)\n", (int)n,
            C[0][0], C[0][1], C[1][0], C[1][1]);
 
-  dict_setup(1.125 * (1ull << n));
-  buffer_setup(dict_size / (mpi_size * mpi_size));
+  dict_setup((1.125 * (1ull << n)) / mpi_size);
+  buffer_setup(dict_size / mpi_size * 1.2);
 
   /* search */
   u64 k1[16], k2[16];
