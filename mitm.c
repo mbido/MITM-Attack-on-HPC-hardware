@@ -324,24 +324,87 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   int nres = 0;
   u64 ncandidates = 0;
   u64 x[256];
-  for (u64 z = 0; z < N; z++) {
+
+  // reset buffers
+  for (int i = 0; i < mpi_size; i++) {
+    buffer_idx[i] = 0;
+    reset_buffer(buffers[i]);
+  }
+
+  for (u64 z = mpi_rank; z < N; z += mpi_size) {
     u64 y = g(z);
     int r = y % mpi_size;
-    if (r % mpi_size != mpi_rank)
-      continue;
-    int nx = dict_probe(y, 256, x);
-    assert(nx >= 0);
-    ncandidates += nx;
-    for (int i = 0; i < nx; i++)
-      if (is_good_pair(x[i], z)) {
-        if (nres == maxres)
-          return -1;
-        k1[nres] = x[i];
-        k2[nres] = z;
-        printf("SOLUTION FOUND!\n");
-        nres += 1;
+    if (r == mpi_rank) {
+      int nx = dict_probe(y, 256, x);
+      assert(nx >= 0);
+      ncandidates += nx;
+      for (int i = 0; i < nx; i++) {
+        if (is_good_pair(x[i], z)) {
+          if (nres == maxres)
+            return -1;
+          k1[nres] = x[i];
+          k2[nres] = z;
+          printf("SOLUTION FOUND!\n");
+          nres += 1;
+          break; // Optionnel : arrêter si une solution est trouvée
+        }
       }
+    } else {
+      // add to buffer
+      u64 index = buffer_idx[r]++;
+      buffers[r][index * 2] = y;
+      buffers[r][index * 2 + 1] = z;
+      if (buffer_idx[r] >= buffer_size) {
+        err(1, "cannot insert in buffer anymore !\n");
+      }
+    }
   }
+
+  // for each rank
+  for (int rank = 0; rank < mpi_size; rank++) {
+    // if a solution is found no need to share the data anymore
+    int global_nres;
+    MPI_Allreduce(&nres, &global_nres, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    if (global_nres > 0) {
+      break;
+    }
+    if (rank == mpi_rank) {
+      // send data to every other processes
+      for (int i = 0; i < mpi_size; i++) {
+        if (i != mpi_rank) {
+          MPI_Send(buffers[i], buffer_size * 2, MPI_UINT64_T, i, TO_INSERT_TAG,
+                   MPI_COMM_WORLD);
+        }
+      }
+    } else {
+      // receive data from processes of rank 'rank'
+      MPI_Status status;
+      MPI_Recv(buffers[mpi_rank], buffer_size * 2, MPI_UINT64_T, rank,
+               TO_INSERT_TAG, MPI_COMM_WORLD, &status);
+
+      for (u64 j = 0; j < buffer_size; j++) {
+        u64 y = buffers[mpi_rank][j * 2];
+        u64 z = buffers[mpi_rank][j * 2 + 1];
+        if (y == null_buffer_value || z == null_buffer_value)
+          break;
+        int nx = dict_probe(y, 256, x);
+        assert(nx >= 0);
+        ncandidates += nx;
+        for (int i = 0; i < nx; i++) {
+          if (is_good_pair(x[i], z)) {
+            if (nres == maxres)
+              return -1;
+            k1[nres] = x[i];
+            k2[nres] = z;
+            printf("SOLUTION FOUND!\n");
+            nres += 1;
+          }
+        }
+      }
+      reset_buffer(buffers[mpi_rank]);
+    }
+  }
+
   printf("rank %d, probe: %.1fs. %" PRId64 " candidate pairs tested\n",
          mpi_rank, wtime() - mid, ncandidates);
   return nres;
