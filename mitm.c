@@ -8,8 +8,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
-typedef unsigned long long u64; /* portable 64-bit integer */
-typedef unsigned u32;           /* portable 32-bit integer */
+typedef uint64_t u64; /* portable 64-bit integer */
+typedef uint32_t u32; /* portable 32-bit integer */
 struct __attribute__((packed)) entry {
   u32 k;
   u64 v;
@@ -298,7 +298,7 @@ void process_command_line_options(int argc, char **argv) {
     switch (ch) {
     case 'n':
       n = atoi(optarg);
-      mask = (1 << n) - 1;
+      mask = (1ull << n) - 1;
       break;
     case '0':
       set |= 1;
@@ -334,6 +334,13 @@ int main(int argc, char **argv) {
     printf("Running with n=%d, C0=(%08x, %08x) and C1=(%08x, %08x)\n", (int)n,
            C[0][0], C[0][1], C[1][0], C[1][1]);
   }
+
+  //   u64 N = 1ull << n;
+
+  // #pragma omp parallel for schedule(static)
+  //   for (u64 x = 0; x < N; x++) {
+  //     u64 z = f(x);
+  //   }
 
   dict_setup((1.125 * (1ull << n)) / mpi_size);
 
