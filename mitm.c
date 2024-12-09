@@ -134,7 +134,7 @@ void buffer_setup(u64 size) {
   char hdsize[8];
   human_format(size * sizeof(*A), hdsize);
   if (mpi_rank == 0)
-    printf("Dictionary size: %sB\n", hdsize);
+    printf("Buffer size: %sB\n", hdsize);
 
   buffers = malloc(sizeof(*buffers) * mpi_size);
   if (buffers == NULL) {
@@ -322,7 +322,8 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
         u64 z = buffers[mpi_rank][j * 2 + 1];
         // !!!! SHOULD BE null_buffer_value = 18446744073709551615
         // !!!! BUT IT IS REPLACED BY 0
-        if (x == 0 || z == 0)
+        if (x == 0 || z == 0 || x == null_buffer_value ||
+            z == null_buffer_value)
           continue;
         // printf("%llu, %llu\n", z, x);
         dict_insert(z, x);
