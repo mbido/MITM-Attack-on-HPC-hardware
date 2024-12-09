@@ -130,8 +130,11 @@ void reset_buffer(u64 *buffer) {
 
 void buffer_setup(u64 size) {
   buffer_size = size;
+
+  char hdsize[8];
+  human_format(size * sizeof(*A), hdsize);
   if (mpi_rank == 0)
-    printf("Buffer size: %llu\n", size);
+    printf("Buffer size: %sB\n", hdsize);
 
   buffers = malloc(sizeof(*buffers) * mpi_size);
   if (buffers == NULL) {
@@ -182,17 +185,22 @@ void dict_setup(u64 size) {
 }
 
 /* Insert the binding key |----> value in the dictionnary */
+// thread safe version
 void dict_insert(u64 key, u64 value) {
   u64 h = murmur64(key) % dict_size;
-  for (;;) {
-    if (A[h].k == EMPTY)
+
+  key = key % PRIME;
+
+  while (true) {
+    u32 expected = EMPTY;
+    // replaces omp compare capture to be gcc-10 compatible
+    if (__sync_bool_compare_and_swap(&A[h].k, expected, key)) {
       break;
-    h += 1;
-    if (h == dict_size)
-      h = 0;
+    }
+    h = (h + 1) % dict_size;
   }
-  assert(A[h].k == EMPTY);
-  A[h].k = key % PRIME;
+
+  assert(A[h].k == key);
   A[h].v = value;
 }
 
@@ -201,6 +209,7 @@ void dict_insert(u64 key, u64 value) {
  *  array must be preallocated of size (at least) `maxval`.
  *  The function returns -1 if there are more than `maxval` results.
  */
+// already thread safe
 int dict_probe(u64 key, int maxval, u64 values[]) {
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
@@ -265,13 +274,16 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   double start = wtime();
   u64 N = 1ull << n;
 
+#pragma omp parallel for schedule(static)
   for (u64 x = mpi_rank; x < N; x += mpi_size) {
     u64 z = f(x);
     int r = z % mpi_size;
     if (r == mpi_rank) {
       dict_insert(z, x);
     } else {
-      u64 index = buffer_idx[r]++;
+      u64 index;
+#pragma omp atomic capture
+      index = buffer_idx[r]++;
       buffers[r][index * 2] = x;
       buffers[r][index * 2 + 1] = z;
       if (buffer_idx[r] >= buffer_size) {
@@ -302,14 +314,17 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
 
       // printf("rank %d received from rank %d\n", mpi_rank, rank);
       // insert data
+
+#pragma omp parallel for schedule(static)
       for (u64 j = 0; j < buffer_size; j++) {
 
         u64 x = buffers[mpi_rank][j * 2];
         u64 z = buffers[mpi_rank][j * 2 + 1];
         // !!!! SHOULD BE null_buffer_value = 18446744073709551615
         // !!!! BUT IT IS REPLACED BY 0
-        if (x == 0 || z == 0)
-          break;
+        if (x == 0 || z == 0 || x == null_buffer_value ||
+            z == null_buffer_value)
+          continue;
         // printf("%llu, %llu\n", z, x);
         dict_insert(z, x);
       }
@@ -330,7 +345,7 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
     buffer_idx[i] = 0;
     reset_buffer(buffers[i]);
   }
-
+#pragma omp parallel for schedule(static)
   for (u64 z = mpi_rank; z < N; z += mpi_size) {
     u64 y = g(z);
     int r = y % mpi_size;
@@ -340,18 +355,22 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
       ncandidates += nx;
       for (int i = 0; i < nx; i++) {
         if (is_good_pair(x[i], z)) {
-          if (nres == maxres)
-            return -1;
-          k1[nres] = x[i];
-          k2[nres] = z;
+          // if (nres == maxres)
+          //   return -1;
+          int index;
+#pragma omp atomic capture
+          index = nres++;
+          k1[index] = x[i];
+          k2[index] = z;
           printf("SOLUTION FOUND!\n");
-          nres += 1;
           break; // Optionnel : arrêter si une solution est trouvée
         }
       }
     } else {
       // add to buffer
-      u64 index = buffer_idx[r]++;
+      u64 index;
+#pragma omp atomic capture
+      index = buffer_idx[r]++;
       buffers[r][index * 2] = y;
       buffers[r][index * 2 + 1] = z;
       if (buffer_idx[r] >= buffer_size) {
@@ -382,22 +401,23 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
       MPI_Recv(buffers[mpi_rank], buffer_size * 2, MPI_UINT64_T, rank,
                TO_INSERT_TAG, MPI_COMM_WORLD, &status);
 
+      // #pragma omp parallel for schedule(static)
       for (u64 j = 0; j < buffer_size; j++) {
         u64 y = buffers[mpi_rank][j * 2];
         u64 z = buffers[mpi_rank][j * 2 + 1];
         if (y == null_buffer_value || z == null_buffer_value)
-          break;
+          continue;
         int nx = dict_probe(y, 256, x);
         assert(nx >= 0);
         ncandidates += nx;
         for (int i = 0; i < nx; i++) {
           if (is_good_pair(x[i], z)) {
-            if (nres == maxres)
-              return -1;
-            k1[nres] = x[i];
-            k2[nres] = z;
+            int index;
+#pragma omp atomic capture
+            index = nres++;
+            k1[index] = x[i];
+            k2[index] = z;
             printf("SOLUTION FOUND!\n");
-            nres += 1;
           }
         }
       }
