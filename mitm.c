@@ -130,8 +130,11 @@ void reset_buffer(u64 *buffer) {
 
 void buffer_setup(u64 size) {
   buffer_size = size;
+
+  char hdsize[8];
+  human_format(size * sizeof(*A), hdsize);
   if (mpi_rank == 0)
-    printf("Buffer size: %llu\n", size);
+    printf("Dictionary size: %sB\n", hdsize);
 
   buffers = malloc(sizeof(*buffers) * mpi_size);
   if (buffers == NULL) {
