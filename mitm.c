@@ -222,9 +222,10 @@ bool is_good_pair(u64 k1, u64 k2) {
 /******************************************************************************/
 
 /* search the "golden collision" */
-int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
+int golden_claw_search(u64 *k1, u64 *k2) {
   double start = wtime();
   u64 N = 1ull << n;
+  int found = 0;
 
 #pragma omp parallel for schedule(static)
   for (u64 x = 0; x < N; x++) {
@@ -238,11 +239,12 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   if (mpi_rank == 0)
     printf("Fill: %.1fs\n", mid - start);
 
-  int nres = 0;
   u64 ncandidates = 0;
 
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) shared(found)
   for (u64 z = 0; z < N; z++) {
+    if (found)
+      continue;
     u64 x[256];
     u64 y = g(z);
     int r = y % mpi_size;
@@ -256,25 +258,23 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
 
     for (int i = 0; i < nx; i++) {
       if (is_good_pair(x[i], z)) {
-        int local_nres;
-
-#pragma omp atomic capture
-        local_nres = nres++;
-
-        k1[local_nres] = x[i];
-        k2[local_nres] = z;
-        printf("SOLUTION FOUND!\n");
-        assert(maxres > local_nres);
+#pragma omp critical
+        {
+          if (!found) {
+            *k1 = x[i];
+            *k2 = z;
+            found = 1;
+            printf("SOLUTION FOUND!\n");
+          }
+        }
       }
     }
   }
   if (mpi_rank == 0)
     printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
            ncandidates);
-  return nres;
+  return found;
 }
-
-/************************** command-line options ****************************/
 
 void usage(char **argv) {
   printf("%s [OPTIONS]\n\n", argv[0]);
@@ -335,26 +335,24 @@ int main(int argc, char **argv) {
            C[0][0], C[0][1], C[1][0], C[1][1]);
   }
 
-  //   u64 N = 1ull << n;
-
-  // #pragma omp parallel for schedule(static)
-  //   for (u64 x = 0; x < N; x++) {
-  //     u64 z = f(x);
-  //   }
-
   dict_setup((1.125 * (1ull << n)) / mpi_size);
 
   /* search */
-  u64 k1[16], k2[16];
-  int nkey = golden_claw_search(16, k1, k2);
-  // assert(nkey > 0);
+  u64 k1, k2;
+  int found = golden_claw_search(&k1, &k2);
 
   /* validation */
-  for (int i = 0; i < nkey; i++) {
-    assert(f(k1[i]) == g(k2[i]));
-    assert(is_good_pair(k1[i], k2[i]));
-    printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n", k1[i],
-           k2[i]);
+  if (found) {
+    k1 &= mask;
+    k2 &= mask;
+    assert(f(k1) == g(k2));
+    assert(is_good_pair(k1, k2));
+    printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n", k1, k2);
+    MPI_Abort(MPI_COMM_WORLD, 0); // Notify other processes to stop
+  } else {
+    if (mpi_rank == 0) {
+      printf("No solution found.\n");
+    }
   }
   MPI_Finalize();
 }
