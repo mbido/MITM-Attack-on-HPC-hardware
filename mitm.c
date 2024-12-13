@@ -138,19 +138,25 @@ void dict_setup(u64 size) {
 }
 
 /* Insert the binding key |----> value in the dictionnary */
+// ! Must be using gcc version >= 12 to compile
 void dict_insert(u64 key, u64 value) {
   u64 h = murmur64(key) % dict_size;
 
   key = key % PRIME;
 
-  while (true) {
-    u32 expected = EMPTY;
-    if (__sync_bool_compare_and_swap(&A[h].k, expected, key)) {
-      // Clé insérée avec succès
-      break;
+  bool ok = false;
+  while (!ok) {
+#pragma omp atomic compare capture
+    {
+      ok = A[h].k == EMPTY;
+      if (ok) {
+        A[h].k = key;
+      }
     }
     h = (h + 1) % dict_size;
   }
+
+  h = ((h - 1) + dict_size) % dict_size;
 
   assert(A[h].k == key);
   A[h].v = value;
