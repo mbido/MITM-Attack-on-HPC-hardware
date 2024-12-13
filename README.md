@@ -55,3 +55,11 @@ mpirun --hostfile $OAR_NODEFILE \
 ```
 
 `--mca pml ^ucx` : This command tells **MPI** to use the `ob1` protocol instead of the `ucx` protocol. Otherwise, the program try to use the `ucx` protocol which is not supported by the cluster and send an error.
+
+
+
+
+**Before Compiling on Grid5000 :**
+```sh
+module load gcc/12
+```
