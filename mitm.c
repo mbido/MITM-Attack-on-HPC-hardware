@@ -186,19 +186,25 @@ void dict_setup(u64 size) {
 
 /* Insert the binding key |----> value in the dictionnary */
 // thread safe version
+// ! Must be using gcc version >= 12 to compile
 void dict_insert(u64 key, u64 value) {
   u64 h = murmur64(key) % dict_size;
 
   key = key % PRIME;
 
-  while (true) {
-    u32 expected = EMPTY;
-    // replaces omp compare capture to be gcc-10 compatible
-    if (__sync_bool_compare_and_swap(&A[h].k, expected, key)) {
-      break;
+  bool ok = false;
+  while (!ok) {
+#pragma omp atomic compare capture
+    {
+      ok = A[h].k == EMPTY;
+      if (ok) {
+        A[h].k = key;
+      }
     }
     h = (h + 1) % dict_size;
   }
+
+  h = ((h - 1) + dict_size) % dict_size;
 
   assert(A[h].k == key);
   A[h].v = value;
@@ -270,7 +276,7 @@ bool is_good_pair(u64 k1, u64 k2) {
 /******************************************************************************/
 
 /* search the "golden collision" */
-int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
+int golden_claw_search(u64 k1[], u64 k2[]) {
   double start = wtime();
   u64 N = 1ull << n;
 
@@ -300,6 +306,7 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
       for (int i = 0; i < mpi_size; i++) {
         if (i != mpi_rank) {
           // printf("rank %d sending to rank %d\n", mpi_rank, i);
+          // ! soit non bloquant ou all-to-all
           MPI_Send(buffers[i], buffer_size * 2, MPI_UINT64_T, i, TO_INSERT_TAG,
                    MPI_COMM_WORLD);
           // printf("rank %d sent to rank %d\n", mpi_rank, i);
@@ -334,7 +341,8 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
   }
 
   double mid = wtime();
-  printf("rank %d, Fill: %.1fs\n", mpi_rank, mid - start);
+  if (mpi_rank == 0)
+    printf("Fill: %.1fs\n", mid - start);
 
   int nres = 0;
   u64 ncandidates = 0;
@@ -418,15 +426,19 @@ int golden_claw_search(int maxres, u64 k1[], u64 k2[]) {
             k1[index] = x[i];
             k2[index] = z;
             printf("SOLUTION FOUND!\n");
+            assert(f(k1[index]) == g(k2[index]));
+            assert(is_good_pair(k1[index], k2[index]));
+            printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
+                   k1[index], k2[index]);
           }
         }
       }
       reset_buffer(buffers[mpi_rank]);
     }
   }
-
-  printf("rank %d, probe: %.1fs. %" PRId64 " candidate pairs tested\n",
-         mpi_rank, wtime() - mid, ncandidates);
+  if (mpi_rank == 0)
+    printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+           ncandidates);
   return nres;
 }
 
@@ -494,15 +506,16 @@ int main(int argc, char **argv) {
 
   /* search */
   u64 k1[16], k2[16];
-  int nkey = golden_claw_search(16, k1, k2);
+  golden_claw_search(k1, k2);
   // assert(nkey > 0);
 
   /* validation */
-  for (int i = 0; i < nkey; i++) {
-    assert(f(k1[i]) == g(k2[i]));
-    assert(is_good_pair(k1[i], k2[i]));
-    printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n", k1[i],
-           k2[i]);
-  }
+  // for (int i = 0; i < nkey; i++) {
+  //   assert(f(k1[i]) == g(k2[i]));
+  //   assert(is_good_pair(k1[i], k2[i]));
+  //   printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
+  //   k1[i],
+  //          k2[i]);
+  // }
   MPI_Finalize();
 }
