@@ -306,6 +306,7 @@ int golden_claw_search(u64 k1[], u64 k2[]) {
       for (int i = 0; i < mpi_size; i++) {
         if (i != mpi_rank) {
           // printf("rank %d sending to rank %d\n", mpi_rank, i);
+          // ! soit non bloquant ou all-to-all
           MPI_Send(buffers[i], buffer_size * 2, MPI_UINT64_T, i, TO_INSERT_TAG,
                    MPI_COMM_WORLD);
           // printf("rank %d sent to rank %d\n", mpi_rank, i);

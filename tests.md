@@ -59,7 +59,7 @@
   - time : 1m7.707s
   - solution : (2d0e1ead, 6f3f80ad)
 - n = 32
-  - time : 2m2.320s
+  - time : 2m2.697s
   - solution : (43c0a3b0, 409e555b)
 
 ### Only OpenMP
@@ -67,7 +67,7 @@
   - time : 0m29.179s
   - solution : (2d0e1ead, 6f3f80ad)
 - n = 32
-  - time : 
+  - time : 0m39.373s
   - solution : (43c0a3b0, 409e555b)
 - n = 35
   - time : 6m5.802s
