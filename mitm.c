@@ -336,6 +336,7 @@ int golden_claw_search(u64 k1[], u64 k2[])
       buffers[r * buffer_size + index * 2 + 1] = z;
       if (buffer_idx[r] >= buffer_length)
       {
+        printf("rank %d, index %lld, length %lld\n", r, index, buffer_length);
         err(1, "Cannot insert in buffer anymore in buffer %d !\n", r);
       }
     }
@@ -400,10 +401,16 @@ int golden_claw_search(u64 k1[], u64 k2[])
 
   // reset buffers
   reset_buffer(buffers, buffer_size * n_buffers);
+  // reset buffer indexes
+  for (u32 i = 0; i < n_buffers; i++)
+  {
+    buffer_idx[i] = 0;
+  }
 
 #pragma omp parallel for schedule(static)
   for (u64 z = mpi_rank; z < N; z += mpi_size)
   {
+    // printf("Ok for rank %d\n", mpi_rank);
     u64 y = g(z);
     int r = y % mpi_size;
     if (r == mpi_rank)
@@ -422,7 +429,7 @@ int golden_claw_search(u64 k1[], u64 k2[])
           index = nres++;
           k1[index] = x[i];
           k2[index] = z;
-          printf("SOLUTION FOUND!\n");
+          printf("SOLUTION FOUND! (1)\n");
           // we do the verification here
           assert(f(k1[index]) == g(k2[index]));
           assert(is_good_pair(k1[index], k2[index]));
@@ -479,18 +486,20 @@ int golden_claw_search(u64 k1[], u64 k2[])
                TO_INSERT_TAG, MPI_COMM_WORLD, &status);
 
       // #pragma omp parallel for schedule(static)
-      for (u64 j = 0; j < buffer_size; j++)
+      for (u64 j = 0; j < buffer_length; j++)
       {
-
         u64 y = buffers[mpi_rank * buffer_size + j * 2];
         u64 z = buffers[mpi_rank * buffer_size + j * 2 + 1];
 
         if (y == 0 || z == 0 || y == null_buffer_value || z == null_buffer_value)
+        {
           continue;
+        }
 
         int nx = dict_probe(y, 256, x);
         assert(nx >= 0);
         ncandidates += nx;
+
         for (int i = 0; i < nx; i++)
         {
           if (is_good_pair(x[i], z))
@@ -501,15 +510,17 @@ int golden_claw_search(u64 k1[], u64 k2[])
 
             k1[index] = x[i];
             k2[index] = z;
-            printf("SOLUTION FOUND!\n");
+            printf("SOLUTION FOUND! (2)\n");
             // we do the verification here
             assert(f(k1[index]) == g(k2[index]));
             assert(is_good_pair(k1[index], k2[index]));
             printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
                    k1[index], k2[index]);
+            break;
           }
         }
       }
+
       reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
     }
   }
@@ -585,7 +596,7 @@ int main(int argc, char **argv)
            C[0][0], C[0][1], C[1][0], C[1][1]);
 
   dict_setup((1.125 * (1ull << n)) / mpi_size);
-  buffer_setup(1.5);
+  buffer_setup(1.125);
 
   /* search */
   u64 k1[16], k2[16];
