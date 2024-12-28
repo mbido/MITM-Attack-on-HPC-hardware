@@ -10,7 +10,8 @@
 
 typedef uint64_t u64; /* portable 64-bit integer */
 typedef uint32_t u32; /* portable 32-bit integer */
-struct __attribute__((packed)) entry {
+struct __attribute__((packed)) entry
+{
   u32 k;
   u64 v;
 }; /* hash table entry */
@@ -31,24 +32,28 @@ u32 C[2][2];
 int mpi_size;
 int mpi_rank;
 #define TO_INSERT_TAG 0
-MPI_Request *requests;
+// MPI_Request *requests;
 
 /* buffers to exchange informations */
-u64 **buffers; // un par processus
-u64 buffer_size;
-u64 null_buffer_value = (u64)(-1);
-u64 *buffer_idx;
+u64 *buffers;                      //! merge buffers
+u64 buffer_length;                 //! number of pairs in one buffer
+u64 buffer_size;                   //! size of the buffer ( = buffer_length * 2)
+u32 n_buffers;                     //! number of buffers
+u64 null_buffer_value = (u64)(-1); //! null value for buffer
+u64 *buffer_idx;                   //! how much each buffer is filled
 
 /************************ tools and utility functions *************************/
 
-double wtime() {
+double wtime()
+{
   struct timeval ts;
   gettimeofday(&ts, NULL);
   return (double)ts.tv_sec + ts.tv_usec / 1E6;
 }
 
 // murmur64 hash functions, tailorized for 64-bit ints / Cf. Daniel Lemire
-u64 murmur64(u64 x) {
+u64 murmur64(u64 x)
+{
   x ^= x >> 33;
   x *= 0xff51afd7ed558ccdull;
   x ^= x >> 33;
@@ -58,24 +63,30 @@ u64 murmur64(u64 x) {
 }
 
 /* represent n in 4 bytes */
-void human_format(u64 n, char *target) {
-  if (n < 1000) {
+void human_format(u64 n, char *target)
+{
+  if (n < 1000)
+  {
     sprintf(target, "%" PRId64, n);
     return;
   }
-  if (n < 1000000) {
+  if (n < 1000000)
+  {
     sprintf(target, "%.1fK", n / 1e3);
     return;
   }
-  if (n < 1000000000) {
+  if (n < 1000000000)
+  {
     sprintf(target, "%.1fM", n / 1e6);
     return;
   }
-  if (n < 1000000000000ll) {
+  if (n < 1000000000000ll)
+  {
     sprintf(target, "%.1fG", n / 1e9);
     return;
   }
-  if (n < 1000000000000000ll) {
+  if (n < 1000000000000000ll)
+  {
     sprintf(target, "%.1fT", n / 1e12);
     return;
   }
@@ -86,14 +97,16 @@ void human_format(u64 n, char *target) {
 #define ROTL32(x, r) (((x) << (r)) | (x >> (32 - (r))))
 #define ROTR32(x, r) (((x) >> (r)) | ((x) << (32 - (r))))
 
-#define ER32(x, y, k)                                                          \
+#define ER32(x, y, k) \
   (x = ROTR32(x, 8), x += y, x ^= k, y = ROTL32(y, 3), y ^= x)
-#define DR32(x, y, k)                                                          \
+#define DR32(x, y, k) \
   (y ^= x, y = ROTR32(y, 3), x ^= k, x -= y, x = ROTL32(x, 8))
 
-void Speck64128KeySchedule(const u32 K[], u32 rk[]) {
+void Speck64128KeySchedule(const u32 K[], u32 rk[])
+{
   u32 i, D = K[3], C = K[2], B = K[1], A = K[0];
-  for (i = 0; i < 27;) {
+  for (i = 0; i < 27;)
+  {
     rk[i] = A;
     ER32(B, A, i++);
     rk[i] = A;
@@ -103,7 +116,8 @@ void Speck64128KeySchedule(const u32 K[], u32 rk[]) {
   }
 }
 
-void Speck64128Encrypt(const u32 Pt[], u32 Ct[], const u32 rk[]) {
+void Speck64128Encrypt(const u32 Pt[], u32 Ct[], const u32 rk[])
+{
   u32 i;
   Ct[0] = Pt[0];
   Ct[1] = Pt[1];
@@ -111,7 +125,8 @@ void Speck64128Encrypt(const u32 Pt[], u32 Ct[], const u32 rk[]) {
     ER32(Ct[1], Ct[0], rk[i++]);
 }
 
-void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[]) {
+void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[])
+{
   int i;
   Pt[0] = Ct[0];
   Pt[1] = Ct[1];
@@ -121,40 +136,51 @@ void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[]) {
 
 /******************************** buffers ********************************/
 
-void reset_buffer(u64 *buffer) {
-  // printf("null_buffer_value = %llu\n", null_buffer_value);
-  for (u64 i = 0; i < buffer_size; i++) {
+/**
+ * @brief reset a buffer to its null value
+ *
+ * @param buffer
+ * @param buffer_size
+ */
+void reset_buffer(u64 *buffer, u64 length)
+{
+  for (u64 i = 0; i < length; i++)
+  {
     buffer[i] = null_buffer_value;
   }
 }
 
-void buffer_setup(u64 size) {
-  buffer_size = size;
+/**
+ * @brief setup the full packed buffer, its indexes and its sizes
+ *
 
+ */
+void buffer_setup(float ratio)
+{
+  buffer_length = (u64)(dict_size / mpi_size * ratio);
+  buffer_size = buffer_length * 2;
+  n_buffers = mpi_size;
+
+  // -----------------------------------------------
   char hdsize[8];
-  human_format(size * sizeof(*A), hdsize);
+  human_format(buffer_size * n_buffers * sizeof(*buffers), hdsize);
   if (mpi_rank == 0)
     printf("Buffer size: %sB\n", hdsize);
+  // -----------------------------------------------
 
-  buffers = malloc(sizeof(*buffers) * mpi_size);
-  if (buffers == NULL) {
+  // initialize buffers
+  buffers = malloc(buffer_size * n_buffers * sizeof(*buffers));
+  if (buffers == NULL)
+  {
     err(1, "impossible de réserver la liste des buffers");
   }
-  buffer_idx = malloc(sizeof(*buffer_idx) * mpi_size);
-  if (buffer_idx == NULL) {
+  reset_buffer(buffers, buffer_size * n_buffers);
+
+  // initialize buffer indexes
+  buffer_idx = calloc(n_buffers, sizeof(*buffer_idx));
+  if (buffer_idx == NULL)
+  {
     err(1, "impossible de réserver la liste des index");
-  }
-  requests = malloc(sizeof(*requests) * mpi_size);
-  if (requests == NULL) {
-    err(1, "impossible de réserver la liste des requêtes MPI");
-  }
-  for (int i = 0; i < mpi_size; i++) {
-    buffer_idx[i] = 0;
-    buffers[i] = malloc(sizeof(*buffers[i]) * size * 2); // x et f(x)
-    if (buffers[i] == NULL) {
-      err(1, "impossible de réserver les buffers");
-    }
-    reset_buffer(buffers[i]);
   }
 }
 
@@ -170,7 +196,8 @@ static const u32 EMPTY = 0xffffffff;
 static const u64 PRIME = 0xfffffffb;
 
 /* allocate a hash table with `size` slots (12*size bytes) */
-void dict_setup(u64 size) {
+void dict_setup(u64 size)
+{
   dict_size = size;
   char hdsize[8];
   human_format(dict_size * sizeof(*A), hdsize);
@@ -186,18 +213,21 @@ void dict_setup(u64 size) {
 
 /* Insert the binding key |----> value in the dictionnary */
 // thread safe version
-// ! Must be using gcc version >= 12 to compile
-void dict_insert(u64 key, u64 value) {
+// ! Must be used with gcc version >= 12 to compile
+void dict_insert(u64 key, u64 value)
+{
   u64 h = murmur64(key) % dict_size;
 
   key = key % PRIME;
 
   bool ok = false;
-  while (!ok) {
+  while (!ok)
+  {
 #pragma omp atomic compare capture
     {
       ok = A[h].k == EMPTY;
-      if (ok) {
+      if (ok)
+      {
         A[h].k = key;
       }
     }
@@ -216,14 +246,17 @@ void dict_insert(u64 key, u64 value) {
  *  The function returns -1 if there are more than `maxval` results.
  */
 // already thread safe
-int dict_probe(u64 key, int maxval, u64 values[]) {
+int dict_probe(u64 key, int maxval, u64 values[])
+{
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
   int nval = 0;
-  for (;;) {
+  for (;;)
+  {
     if (A[h].k == EMPTY)
       return nval;
-    if (A[h].k == k) {
+    if (A[h].k == k)
+    {
       if (nval == maxval)
         return -1;
       values[nval] = A[h].v;
@@ -238,7 +271,8 @@ int dict_probe(u64 key, int maxval, u64 values[]) {
 /***************************** MITM problem ***********************************/
 
 /* f : {0, 1}^n --> {0, 1}^n.  Speck64-128 encryption of P[0], using k */
-u64 f(u64 k) {
+u64 f(u64 k)
+{
   assert((k & mask) == k);
   u32 K[4] = {k & 0xffffffff, k >> 32, 0, 0};
   u32 rk[27];
@@ -249,7 +283,8 @@ u64 f(u64 k) {
 }
 
 /* g : {0, 1}^n --> {0, 1}^n.  speck64-128 decryption of C[0], using k */
-u64 g(u64 k) {
+u64 g(u64 k)
+{
   assert((k & mask) == k);
   u32 K[4] = {k & 0xffffffff, k >> 32, 0, 0};
   u32 rk[27];
@@ -259,7 +294,8 @@ u64 g(u64 k) {
   return ((u64)Pt[0] ^ ((u64)Pt[1] << 32)) & mask;
 }
 
-bool is_good_pair(u64 k1, u64 k2) {
+bool is_good_pair(u64 k1, u64 k2)
+{
   u32 Ka[4] = {k1 & 0xffffffff, k1 >> 32, 0, 0};
   u32 Kb[4] = {k2 & 0xffffffff, k2 >> 32, 0, 0};
   u32 rka[27];
@@ -276,57 +312,71 @@ bool is_good_pair(u64 k1, u64 k2) {
 /******************************************************************************/
 
 /* search the "golden collision" */
-int golden_claw_search(u64 k1[], u64 k2[]) {
+int golden_claw_search(u64 k1[], u64 k2[])
+{
   double start = wtime();
   u64 N = 1ull << n;
 
 #pragma omp parallel for schedule(static)
-  for (u64 x = mpi_rank; x < N; x += mpi_size) {
+  for (u64 x = mpi_rank; x < N; x += mpi_size)
+  {
     u64 z = f(x);
     int r = z % mpi_size;
-    if (r == mpi_rank) {
+    if (r == mpi_rank)
+    {
       dict_insert(z, x);
-    } else {
+    }
+    else
+    {
       u64 index;
 #pragma omp atomic capture
       index = buffer_idx[r]++;
-      buffers[r][index * 2] = x;
-      buffers[r][index * 2 + 1] = z;
-      if (buffer_idx[r] >= buffer_size) {
-        err(1, "cannot insert in buffer anymore !\n");
+
+      buffers[r * buffer_size + index * 2] = x;
+      buffers[r * buffer_size + index * 2 + 1] = z;
+      if (buffer_idx[r] >= buffer_length)
+      {
+        err(1, "Cannot insert in buffer anymore in buffer %d !\n", r);
       }
     }
   }
-  // printf("rank %d filled its buffers\n", mpi_rank);
 
   // for each rank
-  for (int rank = 0; rank < mpi_size; rank++) {
-    if (rank == mpi_rank) {
+  for (int rank = 0; rank < mpi_size; rank++)
+  {
+    if (rank == mpi_rank)
+    {
       // send data to every other rank
-      for (int i = 0; i < mpi_size; i++) {
-        if (i != mpi_rank) {
-          // printf("rank %d sending to rank %d\n", mpi_rank, i);
-          // ! soit non bloquant ou all-to-all
-          MPI_Send(buffers[i], buffer_size * 2, MPI_UINT64_T, i, TO_INSERT_TAG,
-                   MPI_COMM_WORLD);
-          // printf("rank %d sent to rank %d\n", mpi_rank, i);
-        }
+      for (int i = 0; i < mpi_size; i++)
+      {
+        if (i == mpi_rank)
+          continue;
+
+        // printf("rank %d sending to rank %d\n", mpi_rank, i);
+        //! to be changed to merge buffers
+        MPI_Send(&buffers[i * buffer_size], buffer_size, MPI_UINT64_T, i, TO_INSERT_TAG,
+                 MPI_COMM_WORLD);
+        // printf("rank %d sent to rank %d\n", mpi_rank, i);
       }
-    } else {
+    }
+    else
+    {
       // receive data from process of rank 'rank'
       // printf("rank %d receiving from rank %d\n", mpi_rank, rank);
       MPI_Status status;
-      MPI_Recv(buffers[mpi_rank], buffer_size * 2, MPI_UINT64_T, rank,
+      //! to be changed to merge buffers
+      MPI_Recv(&buffers[mpi_rank * buffer_size], buffer_size, MPI_UINT64_T, rank,
                TO_INSERT_TAG, MPI_COMM_WORLD, &status);
 
       // printf("rank %d received from rank %d\n", mpi_rank, rank);
       // insert data
 
 #pragma omp parallel for schedule(static)
-      for (u64 j = 0; j < buffer_size; j++) {
+      for (u64 j = 0; j < buffer_length; j++)
+      {
 
-        u64 x = buffers[mpi_rank][j * 2];
-        u64 z = buffers[mpi_rank][j * 2 + 1];
+        u64 x = buffers[mpi_rank * buffer_size + j * 2];
+        u64 z = buffers[mpi_rank * buffer_size + j * 2 + 1];
         // !!!! SHOULD BE null_buffer_value = 18446744073709551615
         // !!!! BUT IT IS REPLACED BY 0
         if (x == 0 || z == 0 || x == null_buffer_value ||
@@ -335,7 +385,7 @@ int golden_claw_search(u64 k1[], u64 k2[]) {
         // printf("%llu, %llu\n", z, x);
         dict_insert(z, x);
       }
-      reset_buffer(buffers[mpi_rank]);
+      reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
       // printf("rank %d inserted from rank %d\n", mpi_rank, rank);
     }
   }
@@ -349,20 +399,22 @@ int golden_claw_search(u64 k1[], u64 k2[]) {
   u64 x[256];
 
   // reset buffers
-  for (int i = 0; i < mpi_size; i++) {
-    buffer_idx[i] = 0;
-    reset_buffer(buffers[i]);
-  }
+  reset_buffer(buffers, buffer_size * n_buffers);
+
 #pragma omp parallel for schedule(static)
-  for (u64 z = mpi_rank; z < N; z += mpi_size) {
+  for (u64 z = mpi_rank; z < N; z += mpi_size)
+  {
     u64 y = g(z);
     int r = y % mpi_size;
-    if (r == mpi_rank) {
+    if (r == mpi_rank)
+    {
       int nx = dict_probe(y, 256, x);
       assert(nx >= 0);
       ncandidates += nx;
-      for (int i = 0; i < nx; i++) {
-        if (is_good_pair(x[i], z)) {
+      for (int i = 0; i < nx; i++)
+      {
+        if (is_good_pair(x[i], z))
+        {
           // if (nres == maxres)
           //   return -1;
           int index;
@@ -371,61 +423,86 @@ int golden_claw_search(u64 k1[], u64 k2[]) {
           k1[index] = x[i];
           k2[index] = z;
           printf("SOLUTION FOUND!\n");
-          break; // Optionnel : arrêter si une solution est trouvée
+          // we do the verification here
+          assert(f(k1[index]) == g(k2[index]));
+          assert(is_good_pair(k1[index], k2[index]));
+          printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
+                 k1[index], k2[index]);
+          break;
         }
       }
-    } else {
+    }
+    else
+    {
       // add to buffer
       u64 index;
 #pragma omp atomic capture
       index = buffer_idx[r]++;
-      buffers[r][index * 2] = y;
-      buffers[r][index * 2 + 1] = z;
-      if (buffer_idx[r] >= buffer_size) {
-        err(1, "cannot insert in buffer anymore !\n");
+
+      buffers[r * buffer_size + index * 2] = y;
+      buffers[r * buffer_size + index * 2 + 1] = z;
+      if (buffer_idx[r] >= buffer_length)
+      {
+        printf("rank %d, index %lld, length %lld\n", r, index, buffer_length);
+        err(1, "Cannot insert in buffer anymore in buffer %d !\n", r);
       }
     }
   }
 
   // for each rank
-  for (int rank = 0; rank < mpi_size; rank++) {
+  for (int rank = 0; rank < mpi_size; rank++)
+  {
     // if a solution is found no need to share the data anymore
     int global_nres;
     MPI_Allreduce(&nres, &global_nres, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    if (global_nres > 0) {
+    if (global_nres > 0)
+    {
       break;
     }
-    if (rank == mpi_rank) {
+    if (rank == mpi_rank)
+    {
       // send data to every other processes
-      for (int i = 0; i < mpi_size; i++) {
-        if (i != mpi_rank) {
-          MPI_Send(buffers[i], buffer_size * 2, MPI_UINT64_T, i, TO_INSERT_TAG,
-                   MPI_COMM_WORLD);
-        }
+      for (int i = 0; i < mpi_size; i++)
+      {
+        if (i == mpi_rank)
+          continue;
+
+        MPI_Send(&buffers[i * buffer_size], buffer_size, MPI_UINT64_T, i, TO_INSERT_TAG,
+                 MPI_COMM_WORLD);
       }
-    } else {
+    }
+    else
+    {
       // receive data from processes of rank 'rank'
       MPI_Status status;
-      MPI_Recv(buffers[mpi_rank], buffer_size * 2, MPI_UINT64_T, rank,
+      MPI_Recv(&buffers[mpi_rank * buffer_size], buffer_size, MPI_UINT64_T, rank,
                TO_INSERT_TAG, MPI_COMM_WORLD, &status);
 
       // #pragma omp parallel for schedule(static)
-      for (u64 j = 0; j < buffer_size; j++) {
-        u64 y = buffers[mpi_rank][j * 2];
-        u64 z = buffers[mpi_rank][j * 2 + 1];
-        if (y == null_buffer_value || z == null_buffer_value)
+      for (u64 j = 0; j < buffer_size; j++)
+      {
+
+        u64 y = buffers[mpi_rank * buffer_size + j * 2];
+        u64 z = buffers[mpi_rank * buffer_size + j * 2 + 1];
+
+        if (y == 0 || z == 0 || y == null_buffer_value || z == null_buffer_value)
           continue;
+
         int nx = dict_probe(y, 256, x);
         assert(nx >= 0);
         ncandidates += nx;
-        for (int i = 0; i < nx; i++) {
-          if (is_good_pair(x[i], z)) {
+        for (int i = 0; i < nx; i++)
+        {
+          if (is_good_pair(x[i], z))
+          {
             int index;
 #pragma omp atomic capture
             index = nres++;
+
             k1[index] = x[i];
             k2[index] = z;
             printf("SOLUTION FOUND!\n");
+            // we do the verification here
             assert(f(k1[index]) == g(k2[index]));
             assert(is_good_pair(k1[index], k2[index]));
             printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
@@ -433,7 +510,7 @@ int golden_claw_search(u64 k1[], u64 k2[]) {
           }
         }
       }
-      reset_buffer(buffers[mpi_rank]);
+      reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
     }
   }
   if (mpi_rank == 0)
@@ -444,7 +521,8 @@ int golden_claw_search(u64 k1[], u64 k2[]) {
 
 /************************** command-line options ****************************/
 
-void usage(char **argv) {
+void usage(char **argv)
+{
   printf("%s [OPTIONS]\n\n", argv[0]);
   printf("Options:\n");
   printf("--n N                       block size [default 24]\n");
@@ -455,15 +533,18 @@ void usage(char **argv) {
   exit(0);
 }
 
-void process_command_line_options(int argc, char **argv) {
+void process_command_line_options(int argc, char **argv)
+{
   struct option longopts[4] = {{"n", required_argument, NULL, 'n'},
                                {"C0", required_argument, NULL, '0'},
                                {"C1", required_argument, NULL, '1'},
                                {NULL, 0, NULL, 0}};
   char ch;
   int set = 0;
-  while ((ch = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
-    switch (ch) {
+  while ((ch = getopt_long(argc, argv, "", longopts, NULL)) != -1)
+  {
+    switch (ch)
+    {
     case 'n':
       n = atoi(optarg);
       mask = (1ull << n) - 1;
@@ -484,7 +565,8 @@ void process_command_line_options(int argc, char **argv) {
       errx(1, "Unknown option\n");
     }
   }
-  if (n == 0 || set != 3) {
+  if (n == 0 || set != 3)
+  {
     usage(argv);
     exit(1);
   }
@@ -492,7 +574,8 @@ void process_command_line_options(int argc, char **argv) {
 
 /******************************************************************************/
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   MPI_Init(NULL, NULL);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
@@ -502,7 +585,7 @@ int main(int argc, char **argv) {
            C[0][0], C[0][1], C[1][0], C[1][1]);
 
   dict_setup((1.125 * (1ull << n)) / mpi_size);
-  buffer_setup(dict_size / mpi_size * 1.2);
+  buffer_setup(1.5);
 
   /* search */
   u64 k1[16], k2[16];
