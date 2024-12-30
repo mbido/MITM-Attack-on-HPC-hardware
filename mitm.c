@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <omp.h>
 
 typedef uint64_t u64; /* portable 64-bit integer */
 typedef uint32_t u32; /* portable 32-bit integer */
@@ -32,15 +33,14 @@ u32 C[2][2];
 int mpi_size;
 int mpi_rank;
 #define TO_INSERT_TAG 0
-// MPI_Request *requests;
 
 /* buffers to exchange informations */
-u64 *buffers;                      //! merge buffers
+u64 *send_buffers;                 //! send buffers
+u64 *recv_buffers;                 //! receive buffers
 u64 buffer_length;                 //! number of pairs in one buffer
 u64 buffer_size;                   //! size of the buffer ( = buffer_length * 2)
-u32 n_buffers;                     //! number of buffers
 u64 null_buffer_value = (u64)(-1); //! null value for buffer
-u64 *buffer_idx;                   //! how much each buffer is filled
+u64 *send_buffer_idx;              //! how much each send buffer is filled
 
 /************************ tools and utility functions *************************/
 
@@ -159,26 +159,33 @@ void buffer_setup(float ratio)
 {
   buffer_length = (u64)(dict_size / mpi_size * ratio);
   buffer_size = buffer_length * 2;
-  n_buffers = mpi_size;
 
   // -----------------------------------------------
   char hdsize[8];
-  human_format(buffer_size * n_buffers * sizeof(*buffers), hdsize);
+  human_format(buffer_size * mpi_size * sizeof(*send_buffers), hdsize);
   if (mpi_rank == 0)
     printf("Buffer size: %sB\n", hdsize);
   // -----------------------------------------------
 
-  // initialize buffers
-  buffers = malloc(buffer_size * n_buffers * sizeof(*buffers));
-  if (buffers == NULL)
+  // initialize send buffers
+  send_buffers = malloc(buffer_size * mpi_size * sizeof(*send_buffers));
+  if (send_buffers == NULL)
   {
-    err(1, "impossible de réserver la liste des buffers");
+    err(1, "impossible de réserver la liste des send buffers");
   }
-  reset_buffer(buffers, buffer_size * n_buffers);
+  reset_buffer(send_buffers, buffer_size * mpi_size);
 
-  // initialize buffer indexes
-  buffer_idx = calloc(n_buffers, sizeof(*buffer_idx));
-  if (buffer_idx == NULL)
+  // initialize receive buffers
+  recv_buffers = malloc(buffer_size * mpi_size * sizeof(*recv_buffers));
+  if (recv_buffers == NULL)
+  {
+    err(1, "impossible de réserver la liste des recv buffers");
+  }
+  reset_buffer(recv_buffers, buffer_size * mpi_size);
+
+  // initialize send buffer indexes
+  send_buffer_idx = calloc(mpi_size, sizeof(*send_buffer_idx));
+  if (send_buffer_idx == NULL)
   {
     err(1, "impossible de réserver la liste des index");
   }
@@ -240,7 +247,7 @@ void dict_insert(u64 key, u64 value)
   A[h].v = value;
 }
 
-/* Query the dictionnary with this `key`.  Write values (potentially)
+/* Query the dictionnary with this `key`. Write values (potentially)
  *  matching the key in `values` and return their number. The `values`
  *  array must be preallocated of size (at least) `maxval`.
  *  The function returns -1 if there are more than `maxval` results.
@@ -270,7 +277,7 @@ int dict_probe(u64 key, int maxval, u64 values[])
 
 /***************************** MITM problem ***********************************/
 
-/* f : {0, 1}^n --> {0, 1}^n.  Speck64-128 encryption of P[0], using k */
+/* f : {0, 1}^n --> {0, 1}^n. Speck64-128 encryption of P[0], using k */
 u64 f(u64 k)
 {
   assert((k & mask) == k);
@@ -282,7 +289,7 @@ u64 f(u64 k)
   return ((u64)Ct[0] ^ ((u64)Ct[1] << 32)) & mask;
 }
 
-/* g : {0, 1}^n --> {0, 1}^n.  speck64-128 decryption of C[0], using k */
+/* g : {0, 1}^n --> {0, 1}^n. speck64-128 decryption of C[0], using k */
 u64 g(u64 k)
 {
   assert((k & mask) == k);
@@ -330,11 +337,11 @@ int golden_claw_search(u64 k1[], u64 k2[])
     {
       u64 index;
 #pragma omp atomic capture
-      index = buffer_idx[r]++;
+      index = send_buffer_idx[r]++;
 
-      buffers[r * buffer_size + index * 2] = x;
-      buffers[r * buffer_size + index * 2 + 1] = z;
-      if (buffer_idx[r] >= buffer_length)
+      send_buffers[r * buffer_size + index * 2] = x;
+      send_buffers[r * buffer_size + index * 2 + 1] = z;
+      if (send_buffer_idx[r] >= buffer_length)
       {
         printf("rank %d, index %lld, length %lld\n", r, index, buffer_length);
         err(1, "Cannot insert in buffer anymore in buffer %d !\n", r);
@@ -342,52 +349,20 @@ int golden_claw_search(u64 k1[], u64 k2[])
     }
   }
 
-  // for each rank
-  for (int rank = 0; rank < mpi_size; rank++)
-  {
-    if (rank == mpi_rank)
-    {
-      // send data to every other rank
-      for (int i = 0; i < mpi_size; i++)
-      {
-        if (i == mpi_rank)
-          continue;
+  // Exchange buffers using MPI_Alltoall
+  MPI_Alltoall(send_buffers, buffer_size, MPI_UINT64_T, recv_buffers, buffer_size, MPI_UINT64_T, MPI_COMM_WORLD);
 
-        // printf("rank %d sending to rank %d\n", mpi_rank, i);
-        //! to be changed to merge buffers
-        MPI_Send(&buffers[i * buffer_size], buffer_size, MPI_UINT64_T, i, TO_INSERT_TAG,
-                 MPI_COMM_WORLD);
-        // printf("rank %d sent to rank %d\n", mpi_rank, i);
-      }
-    }
-    else
-    {
-      // receive data from process of rank 'rank'
-      // printf("rank %d receiving from rank %d\n", mpi_rank, rank);
-      MPI_Status status;
-      //! to be changed to merge buffers
-      MPI_Recv(&buffers[mpi_rank * buffer_size], buffer_size, MPI_UINT64_T, rank,
-               TO_INSERT_TAG, MPI_COMM_WORLD, &status);
-
-      // printf("rank %d received from rank %d\n", mpi_rank, rank);
-      // insert data
-
+  // Insert received data into the dictionary
 #pragma omp parallel for schedule(static)
-      for (u64 j = 0; j < buffer_length; j++)
-      {
-
-        u64 x = buffers[mpi_rank * buffer_size + j * 2];
-        u64 z = buffers[mpi_rank * buffer_size + j * 2 + 1];
-        // !!!! SHOULD BE null_buffer_value = 18446744073709551615
-        // !!!! BUT IT IS REPLACED BY 0
-        if (x == 0 || z == 0 || x == null_buffer_value ||
-            z == null_buffer_value)
-          continue;
-        // printf("%llu, %llu\n", z, x);
-        dict_insert(z, x);
-      }
-      reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
-      // printf("rank %d inserted from rank %d\n", mpi_rank, rank);
+  for (int r = 0; r < mpi_size; r++)
+  {
+    for (u64 j = 0; j < buffer_length; j++)
+    {
+      u64 x = recv_buffers[r * buffer_size + j * 2];
+      u64 z = recv_buffers[r * buffer_size + j * 2 + 1];
+      if (x == null_buffer_value || z == null_buffer_value)
+        continue;
+      dict_insert(z, x);
     }
   }
 
@@ -399,31 +374,29 @@ int golden_claw_search(u64 k1[], u64 k2[])
   u64 ncandidates = 0;
   u64 x[256];
 
-  // reset buffers
-  reset_buffer(buffers, buffer_size * n_buffers);
-  // reset buffer indexes
-  for (u32 i = 0; i < n_buffers; i++)
+  // reset send buffers
+  reset_buffer(send_buffers, buffer_size * mpi_size);
+  // reset send buffer indexes
+  for (int i = 0; i < mpi_size; i++)
   {
-    buffer_idx[i] = 0;
+    send_buffer_idx[i] = 0;
   }
 
 #pragma omp parallel for schedule(static)
   for (u64 z = mpi_rank; z < N; z += mpi_size)
   {
-    // printf("Ok for rank %d\n", mpi_rank);
     u64 y = g(z);
     int r = y % mpi_size;
     if (r == mpi_rank)
     {
       int nx = dict_probe(y, 256, x);
-      assert(nx >= 0);
+      if (nx < 0)
+        continue;
       ncandidates += nx;
       for (int i = 0; i < nx; i++)
       {
         if (is_good_pair(x[i], z))
         {
-          // if (nres == maxres)
-          //   return -1;
           int index;
 #pragma omp atomic capture
           index = nres++;
@@ -435,6 +408,9 @@ int golden_claw_search(u64 k1[], u64 k2[])
           assert(is_good_pair(k1[index], k2[index]));
           printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
                  k1[index], k2[index]);
+          printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+                 ncandidates);
+          MPI_Abort(MPI_COMM_WORLD, 0);
           break;
         }
       }
@@ -444,11 +420,11 @@ int golden_claw_search(u64 k1[], u64 k2[])
       // add to buffer
       u64 index;
 #pragma omp atomic capture
-      index = buffer_idx[r]++;
+      index = send_buffer_idx[r]++;
 
-      buffers[r * buffer_size + index * 2] = y;
-      buffers[r * buffer_size + index * 2 + 1] = z;
-      if (buffer_idx[r] >= buffer_length)
+      send_buffers[r * buffer_size + index * 2] = y;
+      send_buffers[r * buffer_size + index * 2 + 1] = z;
+      if (send_buffer_idx[r] >= buffer_length)
       {
         printf("rank %d, index %lld, length %lld\n", r, index, buffer_length);
         err(1, "Cannot insert in buffer anymore in buffer %d !\n", r);
@@ -456,77 +432,55 @@ int golden_claw_search(u64 k1[], u64 k2[])
     }
   }
 
-  // for each rank
-  for (int rank = 0; rank < mpi_size; rank++)
+  // Exchange buffers using MPI_Alltoall
+  MPI_Alltoall(send_buffers, buffer_size, MPI_UINT64_T, recv_buffers, buffer_size, MPI_UINT64_T, MPI_COMM_WORLD);
+
+  // Probe received data
+  for (int r = 0; r < mpi_size; r++)
   {
-    // if a solution is found no need to share the data anymore
-    int global_nres;
-    MPI_Allreduce(&nres, &global_nres, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    if (global_nres > 0)
+    for (u64 j = 0; j < buffer_length; j++)
     {
-      break;
-    }
-    if (rank == mpi_rank)
-    {
-      // send data to every other processes
-      for (int i = 0; i < mpi_size; i++)
-      {
-        if (i == mpi_rank)
-          continue;
+      u64 y = recv_buffers[r * buffer_size + j * 2];
+      u64 z = recv_buffers[r * buffer_size + j * 2 + 1];
 
-        MPI_Send(&buffers[i * buffer_size], buffer_size, MPI_UINT64_T, i, TO_INSERT_TAG,
-                 MPI_COMM_WORLD);
+      if (y == null_buffer_value || z == null_buffer_value)
+      {
+        continue;
       }
-    }
-    else
-    {
-      // receive data from processes of rank 'rank'
-      MPI_Status status;
-      MPI_Recv(&buffers[mpi_rank * buffer_size], buffer_size, MPI_UINT64_T, rank,
-               TO_INSERT_TAG, MPI_COMM_WORLD, &status);
 
-      // #pragma omp parallel for schedule(static)
-      for (u64 j = 0; j < buffer_length; j++)
+      int nx = dict_probe(y, 256, x);
+      if (nx < 0)
+        continue;
+      ncandidates += nx;
+
+      for (int i = 0; i < nx; i++)
       {
-        u64 y = buffers[mpi_rank * buffer_size + j * 2];
-        u64 z = buffers[mpi_rank * buffer_size + j * 2 + 1];
-
-        if (y == 0 || z == 0 || y == null_buffer_value || z == null_buffer_value)
+        if (is_good_pair(x[i], z))
         {
-          continue;
-        }
-
-        int nx = dict_probe(y, 256, x);
-        assert(nx >= 0);
-        ncandidates += nx;
-
-        for (int i = 0; i < nx; i++)
-        {
-          if (is_good_pair(x[i], z))
-          {
-            int index;
+          int index;
 #pragma omp atomic capture
-            index = nres++;
+          index = nres++;
 
-            k1[index] = x[i];
-            k2[index] = z;
-            printf("SOLUTION FOUND! (2)\n");
-            // we do the verification here
-            assert(f(k1[index]) == g(k2[index]));
-            assert(is_good_pair(k1[index], k2[index]));
-            printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
-                   k1[index], k2[index]);
-            break;
-          }
+          k1[index] = x[i];
+          k2[index] = z;
+          printf("SOLUTION FOUND! (2)\n");
+          // we do the verification here
+          assert(f(k1[index]) == g(k2[index]));
+          assert(is_good_pair(k1[index], k2[index]));
+          printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
+                 k1[index], k2[index]);
+          printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+                 ncandidates);
+          MPI_Abort(MPI_COMM_WORLD, 0);
+          break;
         }
       }
-
-      reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
     }
   }
-  if (mpi_rank == 0)
-    printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
-           ncandidates);
+
+  // if (mpi_rank == 0)
+  // printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+  //        ncandidates);
   return nres;
 }
 
@@ -601,15 +555,6 @@ int main(int argc, char **argv)
   /* search */
   u64 k1[16], k2[16];
   golden_claw_search(k1, k2);
-  // assert(nkey > 0);
 
-  /* validation */
-  // for (int i = 0; i < nkey; i++) {
-  //   assert(f(k1[i]) == g(k2[i]));
-  //   assert(is_good_pair(k1[i], k2[i]));
-  //   printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
-  //   k1[i],
-  //          k2[i]);
-  // }
   MPI_Finalize();
 }
