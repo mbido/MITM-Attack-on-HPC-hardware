@@ -1,6 +1,7 @@
 #### Commands
 ```sh
 ./mitm --n 20 --C0 6184c52d0df0137a --C1 915d64a00528cfc0
+./mitm --n 28 --C0 6de228dff7917b7a --C1 2c722182a9318461
 ./mitm --n 31 --C0 8f382b169e3ef269 --C1 a4e74e0ceb927493
 ./mitm --n 32 --C0 9dd43cc240131938 --C1 03a38ed28e9e6171
 ./mitm --n 35 --C0 baf19ec5610866cb --C1 7e074786450ee37f
@@ -33,6 +34,25 @@
 - n = 37
   - time : 8m58.987s
   - solution : (1bba107715, d24b49a9c)
+
+### tests on 40 gros nodes at Nancy (990 cores)
+
+#### MPI + OpenMP
+- n = 20
+  - time : 0m9.658s
+  - solution : (ceab4, f7e66)
+- n = 28
+  - time : 0m12.196s
+  - solution : (fd8c5d4, 272f42)
+- n = 31
+  - time : 0m37.829s
+  - solution : (2d0e1ead, 6f3f80ad)
+- n = 32
+  - time : 0m44.773s
+  - solution : (43c0a3b0, 409e555b)
+- n = 35
+  - time : 
+  - solution : 
 
 ### tests on 55 gros nodes at Nancy (990 cores)
 
