@@ -38,10 +38,13 @@ int mpi_rank;
 u64 *buffers;                      //! merge buffers
 u64 *recv_buffers;                 //! buffers to receive data in alltoall
 u64 buffer_length;                 //! number of pairs in one buffer
-u64 buffer_size;                   //! size of the buffer ( = buffer_length * 2)
+u64 buffer_size;                   //! size of the buffer ( = buffer_length *x 2)
 u32 n_buffers;                     //! number of buffers
 u64 null_buffer_value = (u64)(-1); //! null value for buffer
 u32 *buffer_idx;                   //! how much each buffer is filled
+
+/* chronos */
+double start, mid;
 
 /************************ tools and utility functions *************************/
 
@@ -320,10 +323,57 @@ bool is_good_pair(u64 k1, u64 k2)
 
 /******************************************************************************/
 
-/* search the "golden collision" */
-int golden_claw_search(u64 k1[], u64 k2[])
+void insert_from_buffer(u64 *buffer, u64 length)
 {
-  double start = wtime();
+#pragma omp parallel for
+  for (u64 i = 0; i < length; i += 2)
+  {
+    if (buffer[i] == null_buffer_value || buffer[i + 1] == null_buffer_value || buffer[i] == 0 || buffer[i + 1] == 0)
+    {
+      continue;
+    }
+    dict_insert(buffer[i + 1], buffer[i]);
+  }
+}
+
+void probe_from_buffer(u64 *buffer, u64 length)
+{
+  u64 x[256];
+  u64 ncandidates = 0;
+#pragma omp parallel for reduction(+ : ncandidates) private(x)
+  for (u64 i = 0; i < length; i += 2)
+  {
+    if (buffer[i] == null_buffer_value || buffer[i + 1] == null_buffer_value || buffer[i] == 0 || buffer[i + 1] == 0)
+    {
+      continue;
+    }
+    int nx = dict_probe(buffer[i], 256, x);
+    assert(nx >= 0);
+    ncandidates += nx;
+
+    for (int j = 0; j < nx; j++)
+    {
+      if (is_good_pair(x[j], buffer[i + 1]))
+      {
+        printf("SOLUTION FOUND! \n");
+        // we do the verification here
+        assert(f(x[j]) == g(buffer[i + 1]));
+        assert(is_good_pair(x[j], buffer[i + 1]));
+        printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
+               x[j], buffer[i + 1]);
+        printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+               ncandidates);
+        MPI_Abort(MPI_COMM_WORLD, 0);
+        break;
+      }
+    }
+  }
+}
+
+/* search the "golden collision" */
+int golden_claw_search()
+{
+  start = wtime();
   u64 N = 1ull << n;
 
 #pragma omp parallel for schedule(static)
@@ -345,32 +395,13 @@ int golden_claw_search(u64 k1[], u64 k2[])
     }
   }
 
-  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Alltoall(buffers, buffer_size, MPI_UINT64_T, recv_buffers, buffer_size, MPI_UINT64_T, MPI_COMM_WORLD);
-  MPI_Barrier(MPI_COMM_WORLD);
 
-  // // reset buffers
-  // reset_buffer(buffers, buffer_size * n_buffers);
+  insert_from_buffer(recv_buffers, buffer_size * n_buffers);
 
-#pragma omp parallel for schedule(static)
-  for (u64 i = 0; i < (n_buffers * buffer_size) / 2; i++)
-  {
-    u64 x = recv_buffers[i * 2];
-    u64 z = recv_buffers[i * 2 + 1];
-    if (x == 0 || z == 0 || x == null_buffer_value || z == null_buffer_value)
-    {
-      continue;
-    }
-    dict_insert(z, x);
-  }
-
-  double mid = wtime();
+  mid = wtime();
   if (mpi_rank == 0)
     printf("Fill: %.1fs\n", mid - start);
-
-  int nres = 0;
-  u64 ncandidates = 0;
-  u64 x[256];
 
   // reset buffers
   reset_buffer(buffers, buffer_size * n_buffers);
@@ -401,49 +432,11 @@ int golden_claw_search(u64 k1[], u64 k2[])
     }
   }
 
-  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Alltoall(buffers, buffer_size, MPI_UINT64_T, recv_buffers, buffer_size, MPI_UINT64_T, MPI_COMM_WORLD);
-  MPI_Barrier(MPI_COMM_WORLD);
 
-#pragma omp parallel for schedule(static)
-  for (u64 i = 0; i < (n_buffers * buffer_size) / 2; i++)
-  {
-    u64 y = recv_buffers[i * 2];
-    u64 z = recv_buffers[i * 2 + 1];
-    if (y == 0 || z == 0 || y == null_buffer_value || z == null_buffer_value)
-    {
-      continue;
-    }
+  probe_from_buffer(recv_buffers, buffer_size * n_buffers);
 
-    int nx = dict_probe(y, 256, x);
-    assert(nx >= 0);
-    ncandidates += nx;
-
-    for (int i = 0; i < nx; i++)
-    {
-      if (is_good_pair(x[i], z))
-      {
-        int index;
-#pragma omp atomic capture
-        index = nres++;
-
-        k1[index] = x[i];
-        k2[index] = z;
-        printf("SOLUTION FOUND! \n");
-        // we do the verification here
-        assert(f(k1[index]) == g(k2[index]));
-        assert(is_good_pair(k1[index], k2[index]));
-        printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
-               k1[index], k2[index]);
-        printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
-               ncandidates);
-        MPI_Abort(MPI_COMM_WORLD, 0);
-        break;
-      }
-    }
-  }
-
-  return nres;
+  return 0;
 }
 
 /************************** command-line options ****************************/
@@ -515,8 +508,7 @@ int main(int argc, char **argv)
   buffer_setup(1.125);
 
   /* search */
-  u64 k1[16], k2[16];
-  golden_claw_search(k1, k2);
+  golden_claw_search();
   // assert(nkey > 0);
 
   /* validation */
