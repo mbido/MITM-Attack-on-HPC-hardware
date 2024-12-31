@@ -1,14 +1,54 @@
 #### Commands
 ```sh
-./mitm --n 20 --C0 6184c52d0df0137a --C1 915d64a00528cfc0
-./mitm --n 28 --C0 6de228dff7917b7a --C1 2c722182a9318461
-./mitm --n 31 --C0 8f382b169e3ef269 --C1 a4e74e0ceb927493
-./mitm --n 32 --C0 9dd43cc240131938 --C1 03a38ed28e9e6171
-./mitm --n 35 --C0 baf19ec5610866cb --C1 7e074786450ee37f
-./mitm --n 37 --C0 be9a6fc43423c485 --C1 789d8c2530c54c8d
-./mitm --n 40 --C0 70e20a208dd9a4ee --C1 22b9c07cffb0fae1
-./mitm --n 42 --C0 46da2c4e8d8d7705 --C1 5da937a1279f80f6
+./mitm --n 25 --C0 31ee5bc1768c926e --C1 5e3d5c404731f41b
+./mitm --n 26 --C0 3b8a5737c6c27f68 --C1 87278fe44a61c77b
+./mitm --n 27 --C0 cf01b262bdfd732c --C1 36874317b6eca0aa
+./mitm --n 28 --C0 3f4c537cdeda25ec --C1 3aabcecd9eb40348
+./mitm --n 29 --C0 dae7174727466f5b --C1 d433f34f27a046eb
+./mitm --n 30 --C0 a5d4594d6e280f62 --C1 15119ab5cd8bda08
+./mitm --n 31 --C0 ab1558e06baac72d --C1 52a5a49e48ea195e
+./mitm --n 32 --C0 dfee6b909f763142 --C1 c6eea53f30623e17
+./mitm --n 33 --C0 9cf56b655ed39da5 --C1 69a849812079c2f1
+./mitm --n 34 --C0 4820438465644560 --C1 26aa4556a22550b7
+./mitm --n 35 --C0 c6e809f51cb4a1bb --C1 475b32527284e267
+./mitm --n 36 --C0 46ee609ee5affc2c --C1 9defa2257f0f48d0
+./mitm --n 37 --C0 3b552c34a5c6c8f4 --C1 1e3f0c95a766f626
+./mitm --n 38 --C0 3b7b031d14e12ed7 --C1 d99f2cfe9295ef99
+./mitm --n 39 --C0 60d7eb9930550602 --C1 16251bc7f0080c45
+./mitm --n 40 --C0 ef1cade1d23db055 --C1 bf66b3be166329ab
+./mitm --n 41 --C0 625dbffce4336b90 --C1 b73f8d06214f22bd
+./mitm --n 42 --C0 f874afa6931781f7 --C1 21d39aab009c46d4
 ```
+
+### Real Tests
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ### tests on 15 paradoxe nodes at Rennes
 
