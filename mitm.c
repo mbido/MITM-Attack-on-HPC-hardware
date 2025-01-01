@@ -342,35 +342,26 @@ int golden_claw_search(u64 k1[], u64 k2[])
     }
   }
 
-  // for each rank
   for (int rank = 0; rank < mpi_size; rank++)
   {
     if (rank == mpi_rank)
     {
-      // send data to every other rank
       for (int i = 0; i < mpi_size; i++)
       {
         if (i == mpi_rank)
           continue;
 
-        // printf("rank %d sending to rank %d\n", mpi_rank, i);
         //! to be changed to merge buffers
         MPI_Send(&buffers[i * buffer_size], buffer_size, MPI_UINT64_T, i, TO_INSERT_TAG,
                  MPI_COMM_WORLD);
-        // printf("rank %d sent to rank %d\n", mpi_rank, i);
       }
     }
     else
     {
-      // receive data from process of rank 'rank'
-      // printf("rank %d receiving from rank %d\n", mpi_rank, rank);
       MPI_Status status;
       //! to be changed to merge buffers
       MPI_Recv(&buffers[mpi_rank * buffer_size], buffer_size, MPI_UINT64_T, rank,
                TO_INSERT_TAG, MPI_COMM_WORLD, &status);
-
-      // printf("rank %d received from rank %d\n", mpi_rank, rank);
-      // insert data
 
 #pragma omp parallel for schedule(static)
       for (u64 j = 0; j < buffer_length; j++)
@@ -383,11 +374,9 @@ int golden_claw_search(u64 k1[], u64 k2[])
         if (x == 0 || z == 0 || x == null_buffer_value ||
             z == null_buffer_value)
           continue;
-        // printf("%llu, %llu\n", z, x);
         dict_insert(z, x);
       }
       reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
-      // printf("rank %d inserted from rank %d\n", mpi_rank, rank);
     }
   }
 
@@ -605,15 +594,6 @@ int main(int argc, char **argv)
   /* search */
   u64 k1[16], k2[16];
   golden_claw_search(k1, k2);
-  // assert(nkey > 0);
 
-  /* validation */
-  // for (int i = 0; i < nkey; i++) {
-  //   assert(f(k1[i]) == g(k2[i]));
-  //   assert(is_good_pair(k1[i], k2[i]));
-  //   printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
-  //   k1[i],
-  //          k2[i]);
-  // }
   MPI_Finalize();
 }
