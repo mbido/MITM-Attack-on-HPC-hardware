@@ -435,6 +435,9 @@ int golden_claw_search(u64 k1[], u64 k2[])
           assert(is_good_pair(k1[index], k2[index]));
           printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
                  k1[index], k2[index]);
+          printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+                 ncandidates);
+          MPI_Abort(MPI_COMM_WORLD, 0);
           break;
         }
       }
@@ -516,6 +519,9 @@ int golden_claw_search(u64 k1[], u64 k2[])
             assert(is_good_pair(k1[index], k2[index]));
             printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n",
                    k1[index], k2[index]);
+            printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
+                   ncandidates);
+            MPI_Abort(MPI_COMM_WORLD, 0);
             break;
           }
         }
@@ -524,9 +530,7 @@ int golden_claw_search(u64 k1[], u64 k2[])
       reset_buffer(&buffers[mpi_rank * buffer_size], buffer_size);
     }
   }
-  if (mpi_rank == 0)
-    printf("Probe: %.1fs. %" PRId64 " candidate pairs tested\n", wtime() - mid,
-           ncandidates);
+
   return nres;
 }
 
