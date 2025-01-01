@@ -10,7 +10,8 @@
 
 typedef uint64_t u64; /* portable 64-bit integer */
 typedef uint32_t u32; /* portable 32-bit integer */
-struct __attribute__((packed)) entry {
+struct __attribute__((packed)) entry
+{
   u32 k;
   u64 v;
 }; /* hash table entry */
@@ -33,14 +34,16 @@ u32 C[2][2];
 
 /************************ tools and utility functions *************************/
 
-double wtime() {
+double wtime()
+{
   struct timeval ts;
   gettimeofday(&ts, NULL);
   return (double)ts.tv_sec + ts.tv_usec / 1E6;
 }
 
 // murmur64 hash functions, tailorized for 64-bit ints / Cf. Daniel Lemire
-u64 murmur64(u64 x) {
+u64 murmur64(u64 x)
+{
   x ^= x >> 33;
   x *= 0xff51afd7ed558ccdull;
   x ^= x >> 33;
@@ -50,24 +53,30 @@ u64 murmur64(u64 x) {
 }
 
 /* represent n in 4 bytes */
-void human_format(u64 n, char *target) {
-  if (n < 1000) {
+void human_format(u64 n, char *target)
+{
+  if (n < 1000)
+  {
     sprintf(target, "%" PRId64, n);
     return;
   }
-  if (n < 1000000) {
+  if (n < 1000000)
+  {
     sprintf(target, "%.1fK", n / 1e3);
     return;
   }
-  if (n < 1000000000) {
+  if (n < 1000000000)
+  {
     sprintf(target, "%.1fM", n / 1e6);
     return;
   }
-  if (n < 1000000000000ll) {
+  if (n < 1000000000000ll)
+  {
     sprintf(target, "%.1fG", n / 1e9);
     return;
   }
-  if (n < 1000000000000000ll) {
+  if (n < 1000000000000000ll)
+  {
     sprintf(target, "%.1fT", n / 1e12);
     return;
   }
@@ -78,14 +87,16 @@ void human_format(u64 n, char *target) {
 #define ROTL32(x, r) (((x) << (r)) | (x >> (32 - (r))))
 #define ROTR32(x, r) (((x) >> (r)) | ((x) << (32 - (r))))
 
-#define ER32(x, y, k)                                                          \
+#define ER32(x, y, k) \
   (x = ROTR32(x, 8), x += y, x ^= k, y = ROTL32(y, 3), y ^= x)
-#define DR32(x, y, k)                                                          \
+#define DR32(x, y, k) \
   (y ^= x, y = ROTR32(y, 3), x ^= k, x -= y, x = ROTL32(x, 8))
 
-void Speck64128KeySchedule(const u32 K[], u32 rk[]) {
+void Speck64128KeySchedule(const u32 K[], u32 rk[])
+{
   u32 i, D = K[3], C = K[2], B = K[1], A = K[0];
-  for (i = 0; i < 27;) {
+  for (i = 0; i < 27;)
+  {
     rk[i] = A;
     ER32(B, A, i++);
     rk[i] = A;
@@ -95,7 +106,8 @@ void Speck64128KeySchedule(const u32 K[], u32 rk[]) {
   }
 }
 
-void Speck64128Encrypt(const u32 Pt[], u32 Ct[], const u32 rk[]) {
+void Speck64128Encrypt(const u32 Pt[], u32 Ct[], const u32 rk[])
+{
   u32 i;
   Ct[0] = Pt[0];
   Ct[1] = Pt[1];
@@ -103,7 +115,8 @@ void Speck64128Encrypt(const u32 Pt[], u32 Ct[], const u32 rk[]) {
     ER32(Ct[1], Ct[0], rk[i++]);
 }
 
-void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[]) {
+void Speck64128Decrypt(u32 Pt[], const u32 Ct[], u32 const rk[])
+{
   int i;
   Pt[0] = Ct[0];
   Pt[1] = Ct[1];
@@ -123,7 +136,8 @@ static const u32 EMPTY = 0xffffffff;
 static const u64 PRIME = 0xfffffffb;
 
 /* allocate a hash table with `size` slots (12*size bytes) */
-void dict_setup(u64 size) {
+void dict_setup(u64 size)
+{
   dict_size = size;
   char hdsize[8];
   human_format(dict_size * sizeof(*A), hdsize);
@@ -139,17 +153,20 @@ void dict_setup(u64 size) {
 
 /* Insert the binding key |----> value in the dictionnary */
 // ! Must be using gcc version >= 12 to compile
-void dict_insert(u64 key, u64 value) {
+void dict_insert(u64 key, u64 value)
+{
   u64 h = murmur64(key) % dict_size;
 
   key = key % PRIME;
 
   bool ok = false;
-  while (!ok) {
+  while (!ok)
+  {
 #pragma omp atomic compare capture
     {
       ok = A[h].k == EMPTY;
-      if (ok) {
+      if (ok)
+      {
         A[h].k = key;
       }
     }
@@ -167,15 +184,18 @@ void dict_insert(u64 key, u64 value) {
  *  array must be preallocated of size (at least) `maxval`.
  *  The function returns -1 if there are more than `maxval` results.
  */
-int dict_probe(u64 key, int maxval, u64 values[]) {
+int dict_probe(u64 key, int maxval, u64 values[])
+{
   /* TODO : search in the right MPI process (shard)*/
   u32 k = key % PRIME;
   u64 h = murmur64(key) % dict_size;
   int nval = 0;
-  for (;;) {
+  for (;;)
+  {
     if (A[h].k == EMPTY)
       return nval;
-    if (A[h].k == k) {
+    if (A[h].k == k)
+    {
       if (nval == maxval)
         return -1;
       values[nval] = A[h].v;
@@ -190,7 +210,8 @@ int dict_probe(u64 key, int maxval, u64 values[]) {
 /***************************** MITM problem ***********************************/
 
 /* f : {0, 1}^n --> {0, 1}^n.  Speck64-128 encryption of P[0], using k */
-u64 f(u64 k) {
+u64 f(u64 k)
+{
   assert((k & mask) == k);
   u32 K[4] = {k & 0xffffffff, k >> 32, 0, 0};
   u32 rk[27];
@@ -201,7 +222,8 @@ u64 f(u64 k) {
 }
 
 /* g : {0, 1}^n --> {0, 1}^n.  speck64-128 decryption of C[0], using k */
-u64 g(u64 k) {
+u64 g(u64 k)
+{
   assert((k & mask) == k);
   u32 K[4] = {k & 0xffffffff, k >> 32, 0, 0};
   u32 rk[27];
@@ -211,7 +233,8 @@ u64 g(u64 k) {
   return ((u64)Pt[0] ^ ((u64)Pt[1] << 32)) & mask;
 }
 
-bool is_good_pair(u64 k1, u64 k2) {
+bool is_good_pair(u64 k1, u64 k2)
+{
   u32 Ka[4] = {k1 & 0xffffffff, k1 >> 32, 0, 0};
   u32 Kb[4] = {k2 & 0xffffffff, k2 >> 32, 0, 0};
   u32 rka[27];
@@ -228,13 +251,15 @@ bool is_good_pair(u64 k1, u64 k2) {
 /******************************************************************************/
 
 /* search the "golden collision" */
-int golden_claw_search(u64 *k1, u64 *k2) {
+int golden_claw_search(u64 *k1, u64 *k2)
+{
   double start = wtime();
   u64 N = 1ull << n;
   int found = 0;
 
 #pragma omp parallel for schedule(static)
-  for (u64 x = 0; x < N; x++) {
+  for (u64 x = 0; x < N; x++)
+  {
     u64 z = f(x);
     int r = z % mpi_size;
     if (r == mpi_rank)
@@ -248,7 +273,8 @@ int golden_claw_search(u64 *k1, u64 *k2) {
   u64 ncandidates = 0;
 
 #pragma omp parallel for schedule(static) shared(found)
-  for (u64 z = 0; z < N; z++) {
+  for (u64 z = 0; z < N; z++)
+  {
     if (found)
       continue;
     u64 x[256];
@@ -262,11 +288,14 @@ int golden_claw_search(u64 *k1, u64 *k2) {
 #pragma omp atomic
     ncandidates += nx;
 
-    for (int i = 0; i < nx; i++) {
-      if (is_good_pair(x[i], z)) {
+    for (int i = 0; i < nx; i++)
+    {
+      if (is_good_pair(x[i], z))
+      {
 #pragma omp critical
         {
-          if (!found) {
+          if (!found)
+          {
             *k1 = x[i];
             *k2 = z;
             found = 1;
@@ -282,7 +311,8 @@ int golden_claw_search(u64 *k1, u64 *k2) {
   return found;
 }
 
-void usage(char **argv) {
+void usage(char **argv)
+{
   printf("%s [OPTIONS]\n\n", argv[0]);
   printf("Options:\n");
   printf("--n N                       block size [default 24]\n");
@@ -293,15 +323,18 @@ void usage(char **argv) {
   exit(0);
 }
 
-void process_command_line_options(int argc, char **argv) {
+void process_command_line_options(int argc, char **argv)
+{
   struct option longopts[4] = {{"n", required_argument, NULL, 'n'},
                                {"C0", required_argument, NULL, '0'},
                                {"C1", required_argument, NULL, '1'},
                                {NULL, 0, NULL, 0}};
   char ch;
   int set = 0;
-  while ((ch = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
-    switch (ch) {
+  while ((ch = getopt_long(argc, argv, "", longopts, NULL)) != -1)
+  {
+    switch (ch)
+    {
     case 'n':
       n = atoi(optarg);
       mask = (1ull << n) - 1;
@@ -322,7 +355,8 @@ void process_command_line_options(int argc, char **argv) {
       errx(1, "Unknown option\n");
     }
   }
-  if (n == 0 || set != 3) {
+  if (n == 0 || set != 3)
+  {
     usage(argv);
     exit(1);
   }
@@ -330,12 +364,14 @@ void process_command_line_options(int argc, char **argv) {
 
 /******************************************************************************/
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   MPI_Init(NULL, NULL);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
   process_command_line_options(argc, argv);
-  if (mpi_rank == 0) {
+  if (mpi_rank == 0)
+  {
     printf("There is %d processes running\n", mpi_size);
     printf("Running with n=%d, C0=(%08x, %08x) and C1=(%08x, %08x)\n", (int)n,
            C[0][0], C[0][1], C[1][0], C[1][1]);
@@ -348,17 +384,14 @@ int main(int argc, char **argv) {
   int found = golden_claw_search(&k1, &k2);
 
   /* validation */
-  if (found) {
+  if (found)
+  {
     k1 &= mask;
     k2 &= mask;
     assert(f(k1) == g(k2));
     assert(is_good_pair(k1, k2));
     printf("Solution found: (%" PRIx64 ", %" PRIx64 ") [checked OK]\n", k1, k2);
-    MPI_Abort(MPI_COMM_WORLD, 0); // Notify other processes to stop
-  } else {
-    if (mpi_rank == 0) {
-      printf("No solution found.\n");
-    }
+    MPI_Abort(MPI_COMM_WORLD, 0);
   }
   MPI_Finalize();
 }
