@@ -6,6 +6,8 @@
 !sujet.pdf
 !tests.md
 !report
-!report/*
-
+!report/*.tex
+!report/*.pdf
+!report/images
+!report/images/*
 *temp*
