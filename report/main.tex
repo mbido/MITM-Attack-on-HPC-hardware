@@ -149,29 +149,88 @@ execution time evolution of our two implementations.
 In those figures, \textit{Figure \ref{fig:rennes_workload}} for the mesurement on the cluster at
 rennes and \textit{Figure \ref{fig:nancy_workload}} for the mesurement on the cluster at
 nancy, we can see that the implementation using MPI + OpenMP is far slower than
-the implementation using OpenMP only. This is due to the fact taht compoting f(x)
-and g(x) is quite fast to compute and the MPI communications are very slow with a
+the implementation using OpenMP only. This is due to the fact that computing f(x)
+and g(x) is quite fast and the MPI communications are very slow with a
 lot of nodes communicating. \\
 
 Also we did not manage to run the MPI + OpenMP implementation with n > 38 on the clusters
 because it was using to much memory for what was available. Similarly, we did not manage to run
 the OpenMP implementation with n > 39. \\
 
-For more details on the workload scaling, please refer to \textit{Tables \ref{tab:workload_rennes_openmp},
+For more details on the workload scaling analysis, please refer to \textit{Tables \ref{tab:workload_rennes_openmp},
     \ref{tab:workload_nancy_openmp}, \ref{tab:workload_rennes_mpi_openmp} and \ref{tab:workload_nancy_mpi_openmp}} in
-Annexes.
+annexe or to the google sheet at
+\url{https://docs.google.com/spreadsheets/d/1W4t8RGh0IVtv3DTE5xiDeG6a9I0OhWOvyHXUXDlmWPM/edit?usp=sharing}.
 
 \subsection{Strong scaling}
 The strong scaling is the mesurement of the evolution of the execution time of the
 program with the input size being fixed and the number of processes incressing.
 This way we can calculate the speedup (and efficiency) of the program.
 We must note that each process have multiple threads executing on dedicated
-physical cpu cores.
+physical cpu cores (18 for Nancy and 26 for Rennes).
+
+\begin{figure}[htp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/efficiency-nancy.png}
+    \caption{Efficiency at Nancy}
+    \label{fig:nancy_efficiency}
+\end{figure}
+
+\begin{figure}[htp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/efficiency-rennes.png}
+    \caption{Efficiency at Rennes}
+    \label{fig:rennes_efficiency}
+\end{figure}
+
+\begin{figure}[htp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/strong-scaling-nancy.png}
+    \caption{Strong scaling at Nancy}
+    \label{fig:nancy_strong}
+\end{figure}
+
+\begin{figure}[htp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/strong-scaling-rennes.png}
+    \caption{Strong scaling at Rennes}
+    \label{fig:rennes_strong}
+\end{figure}
+
+\textit{Figure \ref{fig:nancy_efficiency}} and \textit{Figure \ref{fig:rennes_efficiency}}
+show that both implementations are not very efficient with the number of processes
+increasing. We can however see that the OpenMP only implementation is slight
+more efficient than the MPI + OpenMP implementation, but not by much.
+However, \textit{Figure \ref{fig:nancy_strong}} and \textit{Figure \ref{fig:rennes_strong}}
+show that the OpenMP only implementation is far faster than the MPI + OpenMP
+implementation especially with a small number of processes. Indeed, the MPI + OpenMP
+is very slow with a small number of processes because of the communications with
+big buffers especially with two processes. \\
+
+We can also see that with more processes, the MPI + OpenMP implementation is less
+and less far from the OpenMP only implementation speed. We can assume that this
+is because the OpenMP only implementation has to compute the whole domain and
+is bounded by those computations and so with a big number of processes, it cannot
+go faster as every processes do the same computation on the whole domain. \\
+
+For more details on the strong scaling analysis, please refer to the google sheet at
+\url{https://docs.google.com/spreadsheets/d/1W4t8RGh0IVtv3DTE5xiDeG6a9I0OhWOvyHXUXDlmWPM/edit?usp=sharing}.
 
 \section{Conclusion}
 
+With the analysis of our mesurements on the performance of our two implementations,
+we can see that the OpenMP only implementation being the easiest to implement
+is also the best to answer our problem. And even if it needs to compute the whole
+domain, can still be scaled to bigger numbers because it computed for around 18
+minutes only for n = 39 at Rennes cluster.
+
+However, our MPI + OpenMP implementation is far from being the best solution using
+MPI communications. We can imagine using smaller buffers and do the communications
+during the computation loop of the parts of the domain. It would be more efficient
+but if we want to use OpenMP threads to compute the domain, it becomes very
+difficult to mix MPI communications and computations in a multithreaded loop.
 
 
-\include{annexe}
+% \include{annexe}
 
 \end{document}
