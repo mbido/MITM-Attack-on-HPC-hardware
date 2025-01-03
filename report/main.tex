@@ -14,7 +14,6 @@
 
 \captionsetup[table]{format=plain, labelformat=simple, labelsep=colon, justification=centering, singlelinecheck=false, textfont=it}
 
-
 \setlength{\parskip}{0em}
 \lstset{
     backgroundcolor=\color{blue!2},
@@ -24,7 +23,6 @@
     keywordstyle=\color{blue},
     commentstyle=\color{green!50!black}
 }
-
 
 \begin{document}
 \begin{titlepage}
@@ -54,6 +52,49 @@
     \vspace*{\fill}
 \end{titlepage}
 
+\section{Compilation and Execution}
+
+You will need to use gcc version 12 or a more recent version to compile the program.
+If you want to compile the program on grid5000, use the following commands before:
+\begin{lstlisting}[language=bash]
+module load gcc/12
+\end{lstlisting}
+
+To compile the program, use the following command:
+\begin{lstlisting}[language=bash]
+make
+\end{lstlisting}
+
+To run the program, there is multiple ways to do it.
+\begin{itemize}
+    \item If you want to run the program with a simple computer with one cpu, you can use the following command:
+          \begin{lstlisting}[language=bash]
+time mpirun -n 1 ./mitm --n 28 --C0 6de228dff7917b7a --C1 2c722182a9318461
+    \end{lstlisting}
+          This way you will run the program with one process and every cores of your cpu will run the threads. The command
+          \textbf{time} is just to measure the execution time of the program.
+    \item If you want to run the program on grid5000 with \(UCX\) available, you can use the following command:
+          \begin{lstlisting}[language=bash]
+time mpirun --hostfile $OAR_NODEFILE \ 
+--map-by ppr:1:socket \
+--bind-to socket \
+./mitm --n 28 --C0 6de228dff7917b7a --C1 2c722182a9318461
+    \end{lstlisting}
+          This will tell \textbf{mpirun} to run one process per physical cpu (socket) and bind the process to the socket.
+    \item If you want to run the program on grid5000 with \(UCX\) unavailable, you can use the following command:
+          \begin{lstlisting}[language=bash]
+time mpirun --hostfile $OAR_NODEFILE \
+--map-by ppr:1:socket \
+--bind-to socket \
+--mca pml ^ucx \
+./mitm --n 28 --C0 3f4c537cdeda25ec --C1 3aabcecd9eb40348
+    \end{lstlisting}
+\end{itemize}
+
+Because of \LaTeX, please do not copy and paste the commands but write them manually.
+
+
+
 \section{Parallelization of the Direct MITM Attack}
 To parallelize the given sequential algorithm, we used a sharding technique
 that divides the dictionary into equal parts among the MPI processes. Each
@@ -66,54 +107,54 @@ distributed, we can also assume that the shards will be approximately equal in
 size. \\
 
 For the implementation of the parallelized algorithm, we used two different methods. The first
-one uses MPI to comunicate buffers computed by each process using OpenMp threads. The second one uses OpenMP
+one uses MPI to communicate buffers computed by each process using OpenMP threads. The second one uses OpenMP
 threads only with no communications. In both cases, to execute the attack, we will ask mpirun to
 run the program with one process per physical CPU (one process per socket). This way, each
-process will havec its memory allocated and the CPU will use its cores to run the OpenMP threads which
+process will have its memory allocated and the CPU will use its cores to run the OpenMP threads which
 are faster for shard memory access.
 
 \subsection{MPI + OpenMP Implementation}
-The idea behind this implementation is to divide the domain in equal parts amoung the MPI processes.
-Each process will compute different f(x) (and g(z)). Each process will use threads to compute its part,
+The idea behind this implementation is to divide the domain in equal parts among the MPI processes.
+Each process will compute different \(f(x)\) (and \(g(z)\)). Each process will use threads to compute its part,
 if the element computed is contained in the process' shard, it will be directly stored in the shard and
 if it is not, if will be stored in a buffer corresponding to the right process rank. Once all the elements
 are computed, the buffers are sent to the right process using MPI communications.
 
 \subsection{OpenMP Implementation}
-The idea behind this implementation is that the comunications are very slow and maybe we can avoid them
+The idea behind this implementation is that the communications are very slow and maybe we can avoid them
 completely. The idea is that each process will compute the whole domain and only store the elements that
 are in its shard. This way, we can avoid the MPI communications but also,
 in this way, we use way less data than the MPI + OpenMP implementation because we only store the shards
 and no buffers.
 
 \section{Solutions}
-The computed solutions for the given problems with various n, n being the size of the words, are shown in
+The computed solutions for the given problems with various \(n\), \(n\) being the size of the words, are shown in
 \textit{Table \ref{tab:solutions}}.
 The input of the problem can be found at \url{https://ppar.tme-crypto.fr/nasser.bidault/25} (replacing 25 with the wanted value).
 \begin{table}
     \centering
     \begin{tabular}{|c|c|}
         \hline
-        \textbf{n} & \textbf{Solution}        \\
+        \textbf{n} & \textbf{Solution}                \\
         \hline
-        25         & (11e065a, 13bf7bf)       \\
-        26         & (151a80, 3831cf8)        \\
-        27         & (4e966f6, 2815842)       \\
-        28         & (22b8c0, f234406)        \\
-        29         & (b2292c0, 17ee4057)      \\
-        30         & (b1e00b9, 175e0f73)      \\
-        31         & (63fbc5aa, 581310d0)     \\
-        32         & (48068c9d, 27cc49fc)     \\
-        33         & (433ed0ae, 1c0d51f99)    \\
-        34         & (24123d4d7, d813bfbe)    \\
-        35         & (38606ddf0, 4db8079f9)   \\
-        36         & (d11c47308, 5e894e85a)   \\
-        37         & (3406de0, 1b4d8b904)     \\
-        38         & (19eff45498, 3a7b4940e3) \\
-        39         & (695ee236ae, 5e0725fce0) \\
+        25         & (\(11e065a\), \(13bf7bf\))       \\
+        26         & (\(151a80\), \(3831cf8\))        \\
+        27         & (\(4e966f6\), \(2815842\))       \\
+        28         & (\(22b8c0\), \(f234406\))        \\
+        29         & (\(b2292c0\), \(17ee4057\))      \\
+        30         & (\(b1e00b9\), \(175e0f73\))      \\
+        31         & (\(63fbc5aa\), \(581310d0\))     \\
+        32         & (\(48068c9d\), \(27cc49fc\))     \\
+        33         & (\(433ed0ae\), \(1c0d51f99\))    \\
+        34         & (\(24123d4d7\), \(d813bfbe\))    \\
+        35         & (\(38606ddf0\), \(4db8079f9\))   \\
+        36         & (\(d11c47308\), \(5e894e85a\))   \\
+        37         & (\(3406de0\), \(1b4d8b904\))     \\
+        38         & (\(19eff45498\), \(3a7b4940e3\)) \\
+        39         & (\(695ee236ae\), \(5e0725fce0\)) \\
         \hline
     \end{tabular}
-    \caption{Computed solutions for various n}
+    \caption{Computed solutions for various \(n\)}
     \label{tab:solutions}
 \end{table}
 
@@ -127,8 +168,8 @@ For Rennes, we used 29 nodes with each 2 sockets and 26 cores per socket (that i
 and 384GiB of RAM per nodes (that is 10.9TB in total) for 6 hours at night.
 
 \subsection{Workload scaling}
-The workload scaling is the mesurement of the evolution of the execution time of the
-program with the number of processes being fixed and the input incressing in size.
+The workload scaling is the measurement of the evolution of the execution time of the
+program with the number of processes being fixed and the input increasing in size.
 We will, in this section we compare the
 execution time evolution of our two implementations.
 
@@ -146,16 +187,16 @@ execution time evolution of our two implementations.
     \label{fig:nancy_workload}
 \end{figure}
 
-In those figures, \textit{Figure \ref{fig:rennes_workload}} for the mesurement on the cluster at
-rennes and \textit{Figure \ref{fig:nancy_workload}} for the mesurement on the cluster at
-nancy, we can see that the implementation using MPI + OpenMP is far slower than
-the implementation using OpenMP only. This is due to the fact that computing f(x)
-and g(x) is quite fast and the MPI communications are very slow with a
+In those figures, \textit{Figure \ref{fig:rennes_workload}} for the measurement on the cluster at
+Rennes and \textit{Figure \ref{fig:nancy_workload}} for the measurement on the cluster at
+Nancy, we can see that the implementation using MPI + OpenMP is far slower than
+the implementation using OpenMP only. This is due to the fact that computing \(f(x)\)
+and \(g(x)\) is quite fast and the MPI communications are very slow with a
 lot of nodes communicating. \\
 
-Also we did not manage to run the MPI + OpenMP implementation with n > 38 on the clusters
+Also we did not manage to run the MPI + OpenMP implementation with \(n > 38\) on the clusters
 because it was using to much memory for what was available. Similarly, we did not manage to run
-the OpenMP implementation with n > 39. \\
+the OpenMP implementation with \(n > 39\). \\
 
 For more details on the workload scaling analysis, please refer to \textit{Tables \ref{tab:workload_rennes_openmp},
     \ref{tab:workload_nancy_openmp}, \ref{tab:workload_rennes_mpi_openmp} and \ref{tab:workload_nancy_mpi_openmp}} in
@@ -163,8 +204,8 @@ annexe or to the google sheet at
 \url{https://docs.google.com/spreadsheets/d/1W4t8RGh0IVtv3DTE5xiDeG6a9I0OhWOvyHXUXDlmWPM/edit?usp=sharing}.
 
 \subsection{Strong scaling}
-The strong scaling is the mesurement of the evolution of the execution time of the
-program with the input size being fixed and the number of processes incressing.
+The strong scaling is the measurement of the evolution of the execution time of the
+program with the input size being fixed and the number of processes increasing.
 This way we can calculate the speedup (and efficiency) of the program.
 We must note that each process have multiple threads executing on dedicated
 physical cpu cores (18 for Nancy and 26 for Rennes).
@@ -182,7 +223,6 @@ physical cpu cores (18 for Nancy and 26 for Rennes).
     \caption{Strong scaling at Rennes}
     \label{fig:rennes_strong}
 \end{figure}
-
 
 \begin{figure}[htp]
     \centering
@@ -223,18 +263,17 @@ annexe to the google sheet at
 
 \section{Conclusion}
 
-With the analysis of our mesurements on the performance of our two implementations,
+With the analysis of our measurements on the performance of our two implementations,
 we can see that the OpenMP only implementation being the easiest to implement
 is also the best to answer our problem. And even if it needs to compute the whole
 domain, can still be scaled to bigger numbers because it computed for around 18
-minutes only for n = 39 at Rennes cluster.
+minutes only for \(n = 39\) at Rennes cluster.
 
 However, our MPI + OpenMP implementation is far from being the best solution using
 MPI communications. We can imagine using smaller buffers and do the communications
 during the computation loop of the parts of the domain. It would be more efficient
 but if we want to use OpenMP threads to compute the domain, it becomes very
 difficult to mix MPI communications and computations in a multithreaded loop.
-
 
 \include{annexe}
 
