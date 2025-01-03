@@ -89,7 +89,7 @@ and no buffers.
 \section{Solutions}
 The computed solutions for the given problems with various n, n being the size of the words, are shown in
 \textit{Table \ref{tab:solutions}}.
-The input of the problem can be found at \url{https://ppar.tme-crypto.fr/nasser.bidault/25} (replacing 25 with the real value).
+The input of the problem can be found at \url{https://ppar.tme-crypto.fr/nasser.bidault/25} (replacing 25 with the wanted value).
 \begin{table}
     \centering
     \begin{tabular}{|c|c|}
@@ -171,6 +171,21 @@ physical cpu cores (18 for Nancy and 26 for Rennes).
 
 \begin{figure}[htp]
     \centering
+    \includegraphics[width=0.7\textwidth]{images/strong-scaling-nancy.png}
+    \caption{Strong scaling at Nancy}
+    \label{fig:nancy_strong}
+\end{figure}
+
+\begin{figure}[htp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{images/strong-scaling-rennes.png}
+    \caption{Strong scaling at Rennes}
+    \label{fig:rennes_strong}
+\end{figure}
+
+
+\begin{figure}[htp]
+    \centering
     \includegraphics[width=0.7\textwidth]{images/efficiency-nancy.png}
     \caption{Efficiency at Nancy}
     \label{fig:nancy_efficiency}
@@ -183,19 +198,7 @@ physical cpu cores (18 for Nancy and 26 for Rennes).
     \label{fig:rennes_efficiency}
 \end{figure}
 
-\begin{figure}[htp]
-    \centering
-    \includegraphics[width=0.7\textwidth]{images/strong-scaling-nancy.png}
-    \caption{Strong scaling at Nancy}
-    \label{fig:nancy_strong}
-\end{figure}
 
-\begin{figure}[htp]
-    \centering
-    \includegraphics[width=0.7\textwidth]{images/strong-scaling-rennes.png}
-    \caption{Strong scaling at Rennes}
-    \label{fig:rennes_strong}
-\end{figure}
 
 \textit{Figure \ref{fig:nancy_efficiency}} and \textit{Figure \ref{fig:rennes_efficiency}}
 show that both implementations are not very efficient with the number of processes
@@ -213,7 +216,9 @@ is because the OpenMP only implementation has to compute the whole domain and
 is bounded by those computations and so with a big number of processes, it cannot
 go faster as every processes do the same computation on the whole domain. \\
 
-For more details on the strong scaling analysis, please refer to the google sheet at
+For more details on the strong scaling analysis, please refer to \textit{Tables \ref{tab:strong_rennes_mpi_openmp},
+    \ref{tab:strong_nancy_mpi_openmp}, \ref{tab:strong_rennes_openmp} and \ref{tab:strong_nancy_openmp}} in
+annexe to the google sheet at
 \url{https://docs.google.com/spreadsheets/d/1W4t8RGh0IVtv3DTE5xiDeG6a9I0OhWOvyHXUXDlmWPM/edit?usp=sharing}.
 
 \section{Conclusion}
@@ -231,6 +236,6 @@ but if we want to use OpenMP threads to compute the domain, it becomes very
 difficult to mix MPI communications and computations in a multithreaded loop.
 
 
-% \include{annexe}
+\include{annexe}
 
 \end{document}
