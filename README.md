@@ -17,7 +17,7 @@ It provides us how to invoke the sequential program. Also, it tells us how much 
 |$40$| 13824.0GB|
 
 ## My goal :
-My goal during this project is to approche the size of the problem with $n=42$ for the beauty of the challenge and which "<u>*begins to be seriously challenging*</u>".
+My goal during this project was to approche the size of the problem with $n=42$ for the beauty of the challenge and which "<u>*begins to be seriously challenging*</u>".
 
 ## Before starting the project :
 **Learn about <u>sharding</u> apply to dictionaries**
